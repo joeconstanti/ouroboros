@@ -2,6 +2,15 @@
 
 ![Ouroboros](assets/ouroboros.png)
 
+```text
+ ██████╗ ██╗   ██╗██████╗  ██████╗ ██████╗  ██████╗ ██████╗  ██████╗ ███████╗
+██╔═══██╗██║   ██║██╔══██╗██╔═══██╗██╔══██╗██╔═══██╗██╔══██╗██╔═══██╗██╔════╝
+██║   ██║██║   ██║██████╔╝██║   ██║██████╔╝██║   ██║██████╔╝██║   ██║███████╗
+██║   ██║██║   ██║██╔══██╗██║   ██║██╔══██╗██║   ██║██╔══██╗██║   ██║╚════██║
+╚██████╔╝╚██████╔╝██║  ██║╚██████╔╝██████╔╝╚██████╔╝██║  ██║╚██████╔╝███████║
+ ╚═════╝  ╚═════╝ ╚═╝  ╚═╝ ╚═════╝ ╚═════╝  ╚═════╝ ╚═╝  ╚═╝ ╚═════╝ ╚══════╝
+ ```
+
 [![Stars](https://img.shields.io/github/stars/fromtheroot/ouroboros?style=flat-square)](https://github.com/fromtheroot/ouroboros/stargazers)
 [![Issues](https://img.shields.io/github/issues/fromtheroot/ouroboros?style=flat-square)](https://github.com/fromtheroot/ouroboros/issues)
 [![License](https://img.shields.io/github/license/fromtheroot/ouroboros?style=flat-square)](https://github.com/fromtheroot/ouroboros/blob/main/LICENSE)
