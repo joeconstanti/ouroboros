@@ -1,17 +1,13 @@
 import { copyFileSync, existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { OUROBOROS_DIR, PROGRESS_FILE } from "../config/loader.ts";
+import { logTaskProgress } from "../config/writer.ts";
 import type { AIEngine, AIResult } from "../engines/types.ts";
+import { cleanupAgentWorktree, createAgentWorktree, getWorktreeBase } from "../git/worktree.ts";
 import type { Task, TaskSource } from "../tasks/types.ts";
 import { YamlTaskSource } from "../tasks/yaml.ts";
-import { PROGRESS_FILE, OUROBOROS_DIR } from "../config/loader.ts";
-import { logTaskProgress } from "../config/writer.ts";
 import { logDebug, logError, logInfo, logSuccess } from "../ui/logger.ts";
 import { notifyTaskComplete, notifyTaskFailed } from "../ui/notify.ts";
-import {
-	cleanupAgentWorktree,
-	createAgentWorktree,
-	getWorktreeBase,
-} from "../git/worktree.ts";
 import { buildParallelPrompt } from "./prompt.ts";
 import { isRetryableError, sleep, withRetry } from "./retry.ts";
 import type { ExecutionOptions, ExecutionResult } from "./sequential.ts";
@@ -37,7 +33,7 @@ async function runAgentInWorktree(
 	prdSource: string,
 	prdFile: string,
 	maxRetries: number,
-	retryDelay: number
+	retryDelay: number,
 ): Promise<ParallelAgentResult> {
 	let worktreeDir = "";
 	let branchName = "";
@@ -49,7 +45,7 @@ async function runAgentInWorktree(
 			agentNum,
 			baseBranch,
 			worktreeBase,
-			originalDir
+			originalDir,
 		);
 		worktreeDir = worktree.worktreeDir;
 		branchName = worktree.branchName;
@@ -83,7 +79,7 @@ async function runAgentInWorktree(
 				}
 				return res;
 			},
-			{ maxRetries, retryDelay }
+			{ maxRetries, retryDelay },
 		);
 
 		return { task, worktreeDir, branchName, result };
@@ -97,7 +93,7 @@ async function runAgentInWorktree(
  * Run tasks in parallel using worktrees
  */
 export async function runParallel(
-	options: ExecutionOptions & { maxParallel: number; prdSource: string; prdFile: string }
+	options: ExecutionOptions & { maxParallel: number; prdSource: string; prdFile: string },
 ): Promise<ExecutionResult> {
 	const {
 		engine,
@@ -181,8 +177,8 @@ export async function runParallel(
 				prdSource,
 				prdFile,
 				maxRetries,
-				retryDelay
-			)
+				retryDelay,
+			),
 		);
 
 		const results = await Promise.all(promises);

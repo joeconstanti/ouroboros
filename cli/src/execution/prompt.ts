@@ -1,3 +1,5 @@
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { loadBoundaries, loadProjectContext, loadRules } from "../config/loader.ts";
 
 interface PromptOptions {
@@ -70,4 +72,77 @@ Instructions:
 
 Do NOT modify PRD.md or mark tasks complete - that will be handled separately.
 Focus only on implementing: ${task}`;
+}
+
+export interface ExperimentPromptOptions {
+	attempt: number;
+	baselinePrimary: string;
+	bestPrimary: string;
+	programFile: string;
+	allowedPaths: string[];
+	forbiddenPaths: string[];
+	workDir?: string;
+	autoCommit?: boolean;
+}
+
+/**
+ * Prompt for autoresearch-style experiment mode (eval-driven keep/discard).
+ */
+export function buildExperimentPrompt(options: ExperimentPromptOptions): string {
+	const {
+		attempt,
+		baselinePrimary,
+		bestPrimary,
+		programFile,
+		allowedPaths,
+		forbiddenPaths,
+		workDir = process.cwd(),
+		autoCommit = true,
+	} = options;
+
+	const parts: string[] = [];
+
+	const context = loadProjectContext(workDir);
+	if (context) {
+		parts.push(`## Project Context\n${context}`);
+	}
+
+	const rules = loadRules(workDir);
+	if (rules.length > 0) {
+		parts.push(`## Rules (you MUST follow these)\n${rules.join("\n")}`);
+	}
+
+	const boundaries = loadBoundaries(workDir);
+	if (boundaries.length > 0) {
+		parts.push(`## Boundaries\nDo NOT modify these files/directories:\n${boundaries.join("\n")}`);
+	}
+
+	const programPath = join(workDir, programFile);
+	if (existsSync(programPath)) {
+		parts.push(`## Experiment protocol\n${readFileSync(programPath, "utf-8")}`);
+	}
+
+	parts.push(`## Experiment state
+- Attempt: ${attempt}
+- Baseline primary metric: ${baselinePrimary}
+- Best primary metric so far: ${bestPrimary}
+- Allowed paths: ${allowedPaths.join(", ")}
+- Forbidden (do not modify): ${forbiddenPaths.join(", ") || "(none)"}
+
+## Task
+1. Propose ONE small hypothesis to improve the primary metric.
+2. Edit only allowed paths; do NOT touch forbidden paths.
+3. Make exactly ONE git commit with a message starting with \`exp: \`.
+4. Append one line to \`.ouroboros/experiments/last-hypothesis.txt\` describing the hypothesis.
+5. Do not run the official evaluator script yourself; the harness runs it after you finish.`);
+
+	if (autoCommit) {
+		parts.push(
+			"Keep the commit focused; the orchestrator will run the evaluator and keep or discard your change.",
+		);
+	}
+
+	parts.push("Keep changes focused and minimal. Do not refactor unrelated code.");
+
+	return parts.join("\n\n");
 }

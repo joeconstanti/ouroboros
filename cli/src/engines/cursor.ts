@@ -12,7 +12,7 @@ export class CursorEngine extends BaseAIEngine {
 		const { stdout, stderr, exitCode } = await execCommand(
 			this.cliCommand,
 			["--print", "--force", "--output-format", "stream-json", prompt],
-			workDir
+			workDir,
 		);
 
 		const output = stdout + stderr;

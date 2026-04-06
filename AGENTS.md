@@ -42,11 +42,17 @@ Run from `cli/` unless noted.
 - Run PRD loop: `./ouroboros.sh --prd PRD.md`
 - These are not build/test commands, but are core usage flows.
 
+## Experiment mode (autoresearch-style)
+- Bash: `./ouroboros.sh --experiment` with `.ouroboros/experiment.yaml` (see `examples/autoresearch/`).
+- CLI: `bun run dev -- --experiment` (optional `--experiment-file <path>`).
+- Evaluators: `scripts/eval.sh` (generic), `scripts/eval-ouroboros.sh` (this repo).
+- Logs: `.ouroboros/experiments/results.tsv` (gitignored local dir).
+
 ## Source layout
 - CLI entrypoint: `cli/src/index.ts`
 - CLI arg parsing: `cli/src/cli/args.ts`
 - Task runners: `cli/src/cli/commands/*.ts`
-- Configuration: `cli/src/config/*.ts`
+- Configuration: `cli/src/config/*.ts` (includes `experiment-loader.ts` for `.ouroboros/experiment.yaml`)
 - Engine integrations: `cli/src/engines/*.ts`
 - Git utilities: `cli/src/git/*.ts`
 - UI/logging: `cli/src/ui/*.ts`

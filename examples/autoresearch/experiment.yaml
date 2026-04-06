@@ -1,0 +1,31 @@
+# Copy to .ouroboros/experiment.yaml and adjust.
+# Autoresearch-style eval loop: baseline → hypothesis → commit → evaluator → keep or discard.
+
+evaluator:
+  # Run from repo root; must print OUROBOROS_EVAL_* lines (see scripts/eval.sh)
+  command: "./scripts/eval.sh"
+
+primary_metric:
+  # Parsed from evaluator output (OUROBOROS_EVAL_PRIMARY)
+  direction: min # min | max
+  # Optional: reject improvements smaller than this (for float metrics)
+  improvement_threshold: 0
+
+max_attempts: 10
+wall_clock_budget_sec: 3600
+eval_timeout_sec: 600
+
+# Branch to fork the experiment branch from (empty = current branch at start)
+base_branch: ""
+
+# Glob patterns (matched with bash [[ ]] against changed files is complex; enforced in prompt + reviewer)
+allowed_paths:
+  - "**"
+
+forbidden_paths:
+  - "scripts/eval.sh"
+  - "scripts/eval-ouroboros.sh"
+  - "fixtures/**"
+
+# After: cp examples/autoresearch/programs/autoresearch.md .ouroboros/programs/autoresearch.md
+program_file: ".ouroboros/programs/autoresearch.md"

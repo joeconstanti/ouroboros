@@ -1,11 +1,11 @@
+import { logTaskProgress } from "../config/writer.ts";
 import type { AIEngine, AIResult } from "../engines/types.ts";
-import type { Task, TaskSource } from "../tasks/types.ts";
 import { createTaskBranch, returnToBaseBranch } from "../git/branch.ts";
 import { createPullRequest } from "../git/pr.ts";
-import { logTaskProgress } from "../config/writer.ts";
+import type { Task, TaskSource } from "../tasks/types.ts";
 import { logDebug, logError, logInfo, logSuccess } from "../ui/logger.ts";
-import { ProgressSpinner } from "../ui/spinner.ts";
 import { notifyTaskComplete, notifyTaskFailed } from "../ui/notify.ts";
+import { ProgressSpinner } from "../ui/spinner.ts";
 import { buildPrompt } from "./prompt.ts";
 import { isRetryableError, sleep, withRetry } from "./retry.ts";
 
@@ -122,7 +122,7 @@ export async function runSequential(options: ExecutionOptions): Promise<Executio
 						onRetry: (attempt) => {
 							spinner.updateStep(`Retry ${attempt}`);
 						},
-					}
+					},
 				);
 
 				if (aiResult.success) {
@@ -145,7 +145,7 @@ export async function runSequential(options: ExecutionOptions): Promise<Executio
 							task.title,
 							`Automated PR created by Ouroboros\n\n${aiResult.response}`,
 							draftPr,
-							workDir
+							workDir,
 						);
 
 						if (prUrl) {

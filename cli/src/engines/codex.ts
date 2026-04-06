@@ -18,7 +18,7 @@ export class CodexEngine extends BaseAIEngine {
 			const { stdout, stderr, exitCode } = await execCommand(
 				this.cliCommand,
 				["exec", "--full-auto", "--json", "--output-last-message", lastMessageFile, prompt],
-				workDir
+				workDir,
 			);
 
 			const output = stdout + stderr;

@@ -24,7 +24,7 @@ export async function execCommand(
 	command: string,
 	args: string[],
 	workDir: string,
-	env?: Record<string, string>
+	env?: Record<string, string>,
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
 	const proc = Bun.spawn([command, ...args], {
 		cwd: workDir,

@@ -11,7 +11,9 @@ export function createProgram(): Command {
 
 	program
 		.name("ouroboros")
-		.description("Agentic coding loop for OpenCode. Supports Claude Code, Codex, Cursor, Qwen-Code and Factory Droid.")
+		.description(
+			"Agentic coding loop for OpenCode. Supports Claude Code, Codex, Cursor, Qwen-Code and Factory Droid.",
+		)
 		.version(VERSION)
 		.argument("[task]", "Single task to execute (brownfield mode)")
 		.option("--init", "Initialize .ouroboros/ configuration")
@@ -41,6 +43,9 @@ export function createProgram(): Command {
 		.option("--github <repo>", "GitHub repo for issues (owner/repo)")
 		.option("--github-label <label>", "Filter GitHub issues by label")
 		.option("--no-commit", "Don't auto-commit changes")
+		.option("--experiment", "Autoresearch-style eval loop (.ouroboros/experiment.yaml)")
+		.option("--autoresearch", "Alias for --experiment")
+		.option("--experiment-file <path>", "Experiment config YAML path", ".ouroboros/experiment.yaml")
 		.option("-v, --verbose", "Verbose output");
 
 	return program;
@@ -86,26 +91,30 @@ export function parseArgs(args: string[]): {
 	const skipTests = opts.fast || opts.skipTests || !opts.tests;
 	const skipLint = opts.fast || opts.skipLint || !opts.lint;
 
+	const experimentMode = Boolean(opts.experiment || opts.autoresearch);
+
 	const options: RuntimeOptions = {
 		skipTests,
 		skipLint,
 		aiEngine,
 		dryRun: opts.dryRun || false,
-		maxIterations: parseInt(opts.maxIterations, 10) || 0,
-		maxRetries: parseInt(opts.maxRetries, 10) || 3,
-		retryDelay: parseInt(opts.retryDelay, 10) || 5,
+		maxIterations: Number.parseInt(opts.maxIterations, 10) || 0,
+		maxRetries: Number.parseInt(opts.maxRetries, 10) || 3,
+		retryDelay: Number.parseInt(opts.retryDelay, 10) || 5,
 		verbose: opts.verbose || false,
 		branchPerTask: opts.branchPerTask || false,
 		baseBranch: opts.baseBranch || "",
 		createPr: opts.createPr || false,
 		draftPr: opts.draftPr || false,
 		parallel: opts.parallel || false,
-		maxParallel: parseInt(opts.maxParallel, 10) || 3,
+		maxParallel: Number.parseInt(opts.maxParallel, 10) || 3,
 		prdSource,
 		prdFile,
 		githubRepo: opts.github || "",
 		githubLabel: opts.githubLabel || "",
 		autoCommit: opts.commit !== false,
+		experimentMode,
+		experimentFile: (opts.experimentFile as string) || ".ouroboros/experiment.yaml",
 	};
 
 	return {

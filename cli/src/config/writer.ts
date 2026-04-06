@@ -3,11 +3,11 @@ import YAML from "yaml";
 import { detectProject } from "./detector.ts";
 import {
 	CONFIG_FILE,
-	PROGRESS_FILE,
 	OUROBOROS_DIR,
+	PROGRESS_FILE,
 	getConfigPath,
-	getProgressPath,
 	getOuroborosDir,
+	getProgressPath,
 } from "./loader.ts";
 import type { OuroborosConfig } from "./types.ts";
 
@@ -60,7 +60,10 @@ function escapeYaml(value: string): string {
 /**
  * Initialize the .ouroboros directory with config files
  */
-export function initConfig(workDir = process.cwd()): { created: boolean; detected: ReturnType<typeof detectProject> } {
+export function initConfig(workDir = process.cwd()): {
+	created: boolean;
+	detected: ReturnType<typeof detectProject>;
+} {
 	const ouroborosDir = getOuroborosDir(workDir);
 	const configPath = getConfigPath(workDir);
 	const progressPath = getProgressPath(workDir);
@@ -114,7 +117,7 @@ export function addRule(rule: string, workDir = process.cwd()): void {
 export function logTaskProgress(
 	task: string,
 	status: "completed" | "failed",
-	workDir = process.cwd()
+	workDir = process.cwd(),
 ): void {
 	const progressPath = getProgressPath(workDir);
 

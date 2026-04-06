@@ -12,7 +12,7 @@ export class DroidEngine extends BaseAIEngine {
 		const { stdout, stderr, exitCode } = await execCommand(
 			this.cliCommand,
 			["exec", "--output-format", "stream-json", "--auto", "medium", prompt],
-			workDir
+			workDir,
 		);
 
 		const output = stdout + stderr;

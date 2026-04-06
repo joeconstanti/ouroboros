@@ -3,10 +3,10 @@ export * from "./markdown.ts";
 export * from "./yaml.ts";
 export * from "./github.ts";
 
-import type { TaskSource, TaskSourceType } from "./types.ts";
-import { MarkdownTaskSource } from "./markdown.ts";
-import { YamlTaskSource } from "./yaml.ts";
 import { GitHubTaskSource } from "./github.ts";
+import { MarkdownTaskSource } from "./markdown.ts";
+import type { TaskSource, TaskSourceType } from "./types.ts";
+import { YamlTaskSource } from "./yaml.ts";
 
 interface TaskSourceOptions {
 	type: TaskSourceType;

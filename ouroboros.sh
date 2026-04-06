@@ -50,6 +50,11 @@ PRD_FILE="PRD.md"
 GITHUB_REPO=""
 GITHUB_LABEL=""
 
+# Autoresearch-style experiment mode (eval-driven keep/discard)
+EXPERIMENT_MODE=false
+EXPERIMENT_FILE=".ouroboros/experiment.yaml"
+EXPERIMENT_START_TIME=0
+
 # Colors (detect if terminal supports colors)
 if [[ -t 1 ]] && command -v tput &>/dev/null && [[ $(tput colors 2>/dev/null || echo 0) -ge 8 ]]; then
   RED=$(tput setaf 1)
@@ -581,6 +586,11 @@ ${BOLD}CONFIG & SETUP:${RESET}
   --config            Show current configuration
   --add-rule "..."    Add a rule to config (e.g., "Always use Zod")
 
+${BOLD}EXPERIMENT MODE (autoresearch-style):${RESET}
+  --experiment        Run eval-driven loop (.ouroboros/experiment.yaml)
+  --autoresearch      Same as --experiment
+  --experiment-file F Use alternate experiment config path
+
 ${BOLD}SINGLE TASK MODE:${RESET}
   "task description"  Run a single task without PRD (quotes required)
   --no-commit         Don't auto-commit after task completion
@@ -638,6 +648,7 @@ ${BOLD}EXAMPLES:${RESET}
   ./ouroboros.sh --parallel --max-parallel 4  # Run 4 tasks concurrently
   ./ouroboros.sh --yaml tasks.yaml            # Use YAML task file
   ./ouroboros.sh --github owner/repo          # Fetch from GitHub issues
+  ./ouroboros.sh --experiment               # Metric-driven experiment loop
 
 ${BOLD}PRD FORMATS:${RESET}
   Markdown (PRD.md):
@@ -681,10 +692,6 @@ parse_args() {
         ;;
       --claude)
         AI_ENGINE="claude"
-        shift
-        ;;
-      --opencode)
-        AI_ENGINE="opencode"
         shift
         ;;
       --opencode)
@@ -789,6 +796,16 @@ parse_args() {
       --add-rule)
         [[ -z "${2:-}" ]] && { log_error "--add-rule requires an argument"; exit 1; }
         ADD_RULE="$2"
+        shift 2
+        ;;
+      --experiment|--autoresearch)
+        EXPERIMENT_MODE=true
+        shift
+        ;;
+      --experiment-file)
+        [[ -z "${2:-}" ]] && { log_error "--experiment-file requires a path"; exit 1; }
+        EXPERIMENT_FILE="$2"
+        EXPERIMENT_MODE=true
         shift 2
         ;;
       --no-commit)
@@ -2686,6 +2703,367 @@ Be careful to preserve functionality from BOTH branches. The goal is to integrat
 }
 
 # ============================================
+# EXPERIMENT MODE (AUTORESEARCH-STYLE)
+# ============================================
+
+# ISO-like timestamp (portable; avoids GNU date -Iseconds)
+experiment_timestamp() {
+  date +"%Y-%m-%dT%H:%M:%S"
+}
+
+# Portable timeout: runs command with wall-clock limit (returns 124 on timeout)
+run_with_timeout() {
+  local max_secs=$1
+  shift
+  local start
+  start=$(date +%s)
+  "$@" &
+  local cmd_pid=$!
+  while kill -0 "$cmd_pid" 2>/dev/null; do
+    if (( $(date +%s) - start > max_secs )); then
+      kill -9 "$cmd_pid" 2>/dev/null || true
+      wait "$cmd_pid" 2>/dev/null || true
+      return 124
+    fi
+    sleep 1
+  done
+  wait "$cmd_pid"
+  return $?
+}
+
+experiment_yq() {
+  yq -r "$2" "$1" 2>/dev/null || echo ""
+}
+
+# Append one TSV row to results (tab-separated)
+experiment_append_result() {
+  local file=$1
+  local line=$2
+  mkdir -p "$(dirname "$file")"
+  if [[ ! -f "$file" ]]; then
+    printf '%s\n' "timestamp	attempt	decision	baseline	primary	best_before	status_eval" > "$file"
+  fi
+  # shellcheck disable=SC3037
+  echo -e "$line" >> "$file"
+}
+
+# Run evaluator in workdir; full output to logfile; sets global _eval_status _eval_primary _eval_duration
+experiment_run_evaluator() {
+  local workdir=$1
+  local eval_cmd=$2
+  local timeout_sec=$3
+  local logfile=$4
+
+  _eval_status=""
+  _eval_primary=""
+  _eval_duration=""
+
+  set +e
+  run_with_timeout "$timeout_sec" bash -c "cd \"$workdir\" && $eval_cmd" > "$logfile" 2>&1
+  local ec=$?
+  set -e
+
+  if [[ "$ec" -eq 124 ]]; then
+    _eval_status="timeout"
+    _eval_primary=""
+    _eval_duration=""
+    return 1
+  fi
+
+  local line
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    case "$line" in
+      OUROBOROS_EVAL_STATUS=*)
+        _eval_status="${line#OUROBOROS_EVAL_STATUS=}"
+        ;;
+      OUROBOROS_EVAL_PRIMARY=*)
+        _eval_primary="${line#OUROBOROS_EVAL_PRIMARY=}"
+        ;;
+      OUROBOROS_EVAL_DURATION_MS=*)
+        _eval_duration="${line#OUROBOROS_EVAL_DURATION_MS=}"
+        ;;
+    esac
+  done < "$logfile"
+
+  if [[ -z "$_eval_primary" ]]; then
+    _eval_status="unparsed"
+    return 1
+  fi
+  return 0
+}
+
+# Returns 0 if new is better than best given direction and threshold (awk)
+experiment_metric_improved() {
+  local direction=$1
+  local threshold=$2
+  local best=$3
+  local new=$4
+  awk -v dir="$direction" -v th="$threshold" -v b="$best" -v n="$new" '
+    BEGIN {
+      if (n == "" || b == "") { exit 1 }
+      if (dir == "min") { if (n < b - th) exit 0; exit 1 }
+      if (dir == "max") { if (n > b + th) exit 0; exit 1 }
+      exit 1
+    }'
+}
+
+build_experiment_prompt() {
+  local attempt=$1
+  local baseline=$2
+  local best=$3
+  local program_path=$4
+  local allowed=$5
+  local forbidden=$6
+
+  local prompt=""
+  if [[ -d "$OUROBOROS_DIR" ]]; then
+    local context
+    context=$(load_project_context)
+    if [[ -n "$context" ]]; then
+      prompt+="## Project Context
+$context
+
+"
+    fi
+    local rules
+    rules=$(load_ouroboros_rules)
+    if [[ -n "$rules" ]]; then
+      prompt+="## Rules (you MUST follow these)
+$rules
+
+"
+    fi
+    local never_touch
+    never_touch=$(load_ouroboros_boundaries "never_touch")
+    if [[ -n "$never_touch" ]]; then
+      prompt+="## Boundaries - Do NOT modify these files:
+$never_touch
+
+"
+    fi
+  fi
+
+  if [[ -f "$program_path" ]]; then
+    prompt+="## Experiment protocol
+$(cat "$program_path")
+
+"
+  fi
+
+  prompt+="## Experiment state
+- Attempt: $attempt
+- Baseline primary metric: $baseline
+- Best primary metric so far: $best
+- Allowed paths (prefer edits here): $allowed
+- Forbidden (evaluator / harness — do not modify): $forbidden
+
+## Task
+1. Propose ONE small hypothesis to improve the primary metric.
+2. Edit only allowed paths; do NOT touch forbidden paths.
+3. Make exactly ONE git commit with a message starting with \`exp: \`.
+4. Append one line describing the hypothesis to \`.ouroboros/experiments/last-hypothesis.txt\` (create file if needed).
+5. Do not mark PRD tasks; this is experiment mode only.
+
+The harness will run the evaluator after your commit and will keep or discard your change based on the score.
+"
+  echo "$prompt"
+}
+
+check_experiment_requirements() {
+  if ! command -v yq &>/dev/null; then
+    log_error "yq is required for experiment mode. Install: https://github.com/mikefarah/yq"
+    exit 1
+  fi
+  if [[ ! -f "$EXPERIMENT_FILE" ]]; then
+    log_error "Experiment config not found: $EXPERIMENT_FILE"
+    log_info "Copy examples/autoresearch/experiment.yaml to .ouroboros/experiment.yaml and edit."
+    exit 1
+  fi
+  if ! command -v jq &>/dev/null; then
+    log_error "jq is required for experiment mode."
+    exit 1
+  fi
+  if ! git rev-parse --git-dir >/dev/null 2>&1; then
+    log_error "Not a git repository"
+    exit 1
+  fi
+  case "$AI_ENGINE" in
+    claude) command -v claude &>/dev/null || { log_error "Claude Code CLI not found"; exit 1; } ;;
+    opencode) command -v opencode &>/dev/null || { log_error "OpenCode CLI not found"; exit 1; } ;;
+    cursor) command -v agent &>/dev/null || { log_error "Cursor agent CLI not found"; exit 1; } ;;
+    codex) command -v codex &>/dev/null || { log_error "Codex CLI not found"; exit 1; } ;;
+    qwen) command -v qwen &>/dev/null || { log_error "Qwen-Code CLI not found"; exit 1; } ;;
+    droid) command -v droid &>/dev/null || { log_error "Factory Droid CLI not found"; exit 1; } ;;
+  esac
+}
+
+run_experiment_mode() {
+  check_experiment_requirements
+
+  local eval_cmd prog_file direction threshold max_att budget eval_to
+  eval_cmd=$(experiment_yq "$EXPERIMENT_FILE" '.evaluator.command // ""')
+  prog_file=$(experiment_yq "$EXPERIMENT_FILE" '.program_file // ".ouroboros/programs/autoresearch.md"')
+  direction=$(experiment_yq "$EXPERIMENT_FILE" '.primary_metric.direction // "min"')
+  threshold=$(experiment_yq "$EXPERIMENT_FILE" '.primary_metric.improvement_threshold // .improvement_threshold // 0')
+  max_att=$(experiment_yq "$EXPERIMENT_FILE" '.max_attempts // 10')
+  budget=$(experiment_yq "$EXPERIMENT_FILE" '.wall_clock_budget_sec // 3600')
+  eval_to=$(experiment_yq "$EXPERIMENT_FILE" '.eval_timeout_sec // 600')
+  local exp_base
+  exp_base=$(experiment_yq "$EXPERIMENT_FILE" '.base_branch // ""')
+
+  if [[ -z "${eval_cmd// /}" ]]; then
+    log_error "evaluator.command is empty in $EXPERIMENT_FILE"
+    exit 1
+  fi
+
+  local allowed forbidden
+  allowed=$(yq -o=json '.allowed_paths // ["**"]' "$EXPERIMENT_FILE" 2>/dev/null | jq -r '. | join(", ")' 2>/dev/null || echo "**")
+  forbidden=$(yq -o=json '.forbidden_paths // []' "$EXPERIMENT_FILE" 2>/dev/null | jq -r '. | join(", ")' 2>/dev/null || echo "")
+
+  mkdir -p "$OUROBOROS_DIR/experiments/runs"
+  local results_tsv="$OUROBOROS_DIR/experiments/results.tsv"
+  touch "$OUROBOROS_DIR/experiments/last-hypothesis.txt"
+
+  local base_br="${BASE_BRANCH:-}"
+  if [[ -z "$base_br" ]] && [[ -n "$exp_base" ]]; then
+    base_br="$exp_base"
+  fi
+  if [[ -z "$base_br" ]]; then
+    base_br=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "main")
+  fi
+
+  log_info "Experiment mode: evaluator=$eval_cmd direction=$direction max_attempts=$max_att"
+  log_info "Base branch: $base_br"
+
+  git checkout "$base_br" 2>/dev/null || { log_error "Cannot checkout $base_br"; exit 1; }
+
+  local exp_branch="ouroboros/experiment-$(date +%s)"
+  git checkout -b "$exp_branch" 2>/dev/null || { log_error "Failed to create $exp_branch"; exit 1; }
+  log_success "Created branch $exp_branch"
+
+  local baseline_log="$OUROBOROS_DIR/experiments/runs/baseline.log"
+  experiment_run_evaluator "$(pwd)" "$eval_cmd" "$eval_to" "$baseline_log" || true
+  local baseline_score="$_eval_primary"
+  local baseline_status="$_eval_status"
+  if [[ -z "$baseline_score" ]]; then
+    log_warn "Baseline evaluator did not emit OUROBOROS_EVAL_PRIMARY (see $baseline_log). Using 0."
+    baseline_score="0"
+  fi
+  log_info "Baseline: status=${baseline_status:-?} primary=$baseline_score"
+
+  local best_score="$baseline_score"
+  local best_commit
+  best_commit=$(git rev-parse HEAD)
+  EXPERIMENT_START_TIME=$(date +%s)
+  local att=0
+
+  while [[ "$att" -lt "$max_att" ]]; do
+    if (( $(date +%s) - EXPERIMENT_START_TIME > budget )); then
+      log_warn "Wall clock budget (${budget}s) reached."
+      break
+    fi
+    att=$((att + 1))
+    echo ""
+    echo "${BOLD}>>> Experiment attempt $att / $max_att${RESET}"
+    echo "--------------------------------------------"
+
+    local prompt
+    prompt=$(build_experiment_prompt "$att" "$baseline_score" "$best_score" "$prog_file" "$allowed" "$forbidden")
+
+    if [[ "$DRY_RUN" == true ]]; then
+      log_info "DRY RUN - prompt:"
+      echo "${DIM}$prompt${RESET}"
+      break
+    fi
+
+    tmpfile=$(mktemp)
+    retry_count=0
+    local ai_ok=false
+    while [[ $retry_count -lt $MAX_RETRIES ]]; do
+      run_ai_command "$prompt" "$tmpfile"
+      monitor_progress "$tmpfile" "experiment-$att" &
+      monitor_pid=$!
+      wait "$ai_pid" 2>/dev/null || true
+      kill "$monitor_pid" 2>/dev/null || true
+      wait "$monitor_pid" 2>/dev/null || true
+      monitor_pid=""
+
+      local result
+      result=$(cat "$tmpfile" 2>/dev/null || echo "")
+      rm -f "$tmpfile"
+      tmpfile=""
+
+      if [[ -z "$result" ]]; then
+        ((retry_count++)) || true
+        log_error "Empty AI response (attempt $retry_count/$MAX_RETRIES)"
+        sleep "$RETRY_DELAY"
+        continue
+      fi
+      if ! error_msg=$(check_for_errors "$result"); then
+        ((retry_count++)) || true
+        log_error "API error: $error_msg"
+        sleep "$RETRY_DELAY"
+        continue
+      fi
+      ai_ok=true
+      break
+    done
+
+    if [[ "$ai_ok" != true ]]; then
+      log_error "AI step failed after retries"
+      experiment_append_result "$results_tsv" "$(experiment_timestamp)\t$att\taifail\t$baseline_score\t\t$best_score\t"
+      continue
+    fi
+
+    local ncommits
+    ncommits=$(git rev-list --count "$best_commit"..HEAD 2>/dev/null || echo "0")
+    [[ "$ncommits" =~ ^[0-9]+$ ]] || ncommits=0
+    if [[ "$ncommits" -eq 0 ]]; then
+      log_warn "No new commit on top of best; discarding (no-op)."
+      experiment_append_result "$results_tsv" "$(experiment_timestamp)\t$att\tnocommit\t$baseline_score\t\t$best_score\t"
+      continue
+    fi
+    if [[ "$ncommits" -gt 1 ]]; then
+      log_warn "Multiple commits detected; resetting to best and discarding attempt."
+      git reset --hard "$best_commit"
+      experiment_append_result "$results_tsv" "$(experiment_timestamp)\t$att\tmulticommit\t$baseline_score\t\t$best_score\t"
+      continue
+    fi
+
+    local attempt_log="$OUROBOROS_DIR/experiments/runs/attempt-${att}.log"
+    experiment_run_evaluator "$(pwd)" "$eval_cmd" "$eval_to" "$attempt_log" || true
+    local new_score="$_eval_primary"
+    local ev_status="$_eval_status"
+
+    if [[ -z "$new_score" ]]; then
+      log_warn "Could not parse evaluator output; reverting commit."
+      git reset --hard "$best_commit"
+      experiment_append_result "$results_tsv" "$(experiment_timestamp)\t$att\tunparsed\t$baseline_score\t\t$best_score\t$ev_status"
+      continue
+    fi
+
+    if experiment_metric_improved "$direction" "$threshold" "$best_score" "$new_score"; then
+      log_success "KEEP primary=$new_score (was $best_score)"
+      best_score="$new_score"
+      best_commit=$(git rev-parse HEAD)
+      experiment_append_result "$results_tsv" "$(experiment_timestamp)\t$att\tkeep\t$baseline_score\t$new_score\t$best_score\t$ev_status"
+    else
+      log_warn "DISCARD primary=$new_score (best=$best_score)"
+      git reset --hard "$best_commit"
+      experiment_append_result "$results_tsv" "$(experiment_timestamp)\t$att\tdiscard\t$baseline_score\t$new_score\t$best_score\t$ev_status"
+    fi
+  done
+
+  echo ""
+  echo "${BOLD}============================================${RESET}"
+  echo "${BOLD}Experiment finished${RESET}"
+  echo "Branch: $exp_branch"
+  echo "Best primary metric: $best_score (baseline was $baseline_score)"
+  echo "Results: $results_tsv"
+  echo "${BOLD}============================================${RESET}"
+}
+
+# ============================================
 # SUMMARY
 # ============================================
 
@@ -2767,6 +3145,15 @@ main() {
   # Handle --add-rule
   if [[ -n "$ADD_RULE" ]]; then
     add_ouroboros_rule "$ADD_RULE"
+    exit 0
+  fi
+
+  # Experiment mode (autoresearch-style eval loop)
+  if [[ "$EXPERIMENT_MODE" == true ]]; then
+    trap cleanup EXIT
+    trap 'exit 130' INT TERM HUP
+    mkdir -p "$OUROBOROS_DIR"
+    run_experiment_mode
     exit 0
   fi
 

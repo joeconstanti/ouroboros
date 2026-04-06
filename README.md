@@ -45,6 +45,7 @@ chmod +x ouroboros.sh
 - **PRD mode** loops through a task list until it is complete.
 - **OpenCode-first** defaults to OpenCode for execution; other engines are available.
 - **Git-required** expects a git repo so it can commit and track progress.
+- **Experiment mode** runs an [autoresearch](https://github.com/karpathy/autoresearch)-style loop: baseline evaluator → one hypothesis + one commit per attempt → evaluator → keep or discard.
 
 ## Two Modes
 
@@ -93,6 +94,25 @@ boundaries:
 ```
 
 Rules apply to all tasks (single or PRD).
+
+## Experiment mode (autoresearch-style)
+
+Metric-driven improvement with a frozen evaluator script. Copy the example config and program, then run:
+
+```bash
+mkdir -p .ouroboros/programs
+cp examples/autoresearch/experiment.yaml .ouroboros/experiment.yaml
+cp examples/autoresearch/programs/autoresearch.md .ouroboros/programs/autoresearch.md
+chmod +x scripts/eval.sh
+# Edit .ouroboros/experiment.yaml — set evaluator.command, allowed_paths, forbidden_paths, program_file
+./ouroboros.sh --experiment
+```
+
+- **`scripts/eval.sh`** — generic harness: runs `commands.test`, `commands.lint`, and `commands.build` from `.ouroboros/config.yaml` and prints `OUROBOROS_EVAL_*` lines (lower `PRIMARY` = fewer failed steps).
+- **`scripts/eval-ouroboros.sh`** — preset for this repo (`bun run check` in `cli/`, `bash -n` on `ouroboros.sh`). Point `evaluator.command` at it for self-host experiments.
+- Results append to **`.ouroboros/experiments/results.tsv`** (and per-run logs under `.ouroboros/experiments/runs/`).
+
+The Bun CLI supports the same flow: `bun run dev -- --experiment` (from `cli/`, with `--experiment-file` if needed).
 
 ## AI Engines
 

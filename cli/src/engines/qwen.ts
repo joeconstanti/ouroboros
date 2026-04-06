@@ -1,9 +1,4 @@
-import {
-	BaseAIEngine,
-	checkForErrors,
-	execCommand,
-	parseStreamJsonResult,
-} from "./base.ts";
+import { BaseAIEngine, checkForErrors, execCommand, parseStreamJsonResult } from "./base.ts";
 import type { AIResult } from "./types.ts";
 
 /**
@@ -17,7 +12,7 @@ export class QwenEngine extends BaseAIEngine {
 		const { stdout, stderr, exitCode } = await execCommand(
 			this.cliCommand,
 			["--output-format", "stream-json", "--approval-mode", "yolo", "-p", prompt],
-			workDir
+			workDir,
 		);
 
 		const output = stdout + stderr;

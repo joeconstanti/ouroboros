@@ -13,7 +13,7 @@ export class OpenCodeEngine extends BaseAIEngine {
 			this.cliCommand,
 			["run", "--format", "json", prompt],
 			workDir,
-			{ OPENCODE_PERMISSION: '{"*":"allow"}' }
+			{ OPENCODE_PERMISSION: '{"*":"allow"}' },
 		);
 
 		const output = stdout + stderr;

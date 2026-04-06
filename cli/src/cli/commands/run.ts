@@ -1,13 +1,20 @@
 import { existsSync } from "node:fs";
-import type { AIEngineName } from "../../engines/types.ts";
-import { createEngine, isEngineAvailable } from "../../engines/index.ts";
-import { createTaskSource } from "../../tasks/index.ts";
-import { runSequential } from "../../execution/sequential.ts";
-import { runParallel } from "../../execution/parallel.ts";
-import { getDefaultBaseBranch } from "../../git/branch.ts";
-import { logError, logInfo, logSuccess, setVerbose, formatDuration, formatTokens } from "../../ui/logger.ts";
-import { notifyAllComplete } from "../../ui/notify.ts";
 import type { RuntimeOptions } from "../../config/types.ts";
+import { createEngine, isEngineAvailable } from "../../engines/index.ts";
+import type { AIEngineName } from "../../engines/types.ts";
+import { runParallel } from "../../execution/parallel.ts";
+import { type ExecutionResult, runSequential } from "../../execution/sequential.ts";
+import { getDefaultBaseBranch } from "../../git/branch.ts";
+import { createTaskSource } from "../../tasks/index.ts";
+import {
+	formatDuration,
+	formatTokens,
+	logError,
+	logInfo,
+	logSuccess,
+	setVerbose,
+} from "../../ui/logger.ts";
+import { notifyAllComplete } from "../../ui/notify.ts";
 
 /**
  * Run the PRD loop (multiple tasks from file/GitHub)
@@ -73,7 +80,7 @@ export async function runLoop(options: RuntimeOptions): Promise<void> {
 	console.log("");
 
 	// Run tasks
-	let result;
+	let result: ExecutionResult;
 	if (options.parallel) {
 		result = await runParallel({
 			engine,

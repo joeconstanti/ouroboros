@@ -1,9 +1,4 @@
-import {
-	BaseAIEngine,
-	checkForErrors,
-	execCommand,
-	parseStreamJsonResult,
-} from "./base.ts";
+import { BaseAIEngine, checkForErrors, execCommand, parseStreamJsonResult } from "./base.ts";
 import type { AIResult } from "./types.ts";
 
 /**
@@ -16,8 +11,15 @@ export class ClaudeEngine extends BaseAIEngine {
 	async execute(prompt: string, workDir: string): Promise<AIResult> {
 		const { stdout, stderr, exitCode } = await execCommand(
 			this.cliCommand,
-			["--dangerously-skip-permissions", "--verbose", "--output-format", "stream-json", "-p", prompt],
-			workDir
+			[
+				"--dangerously-skip-permissions",
+				"--verbose",
+				"--output-format",
+				"stream-json",
+				"-p",
+				prompt,
+			],
+			workDir,
 		);
 
 		const output = stdout + stderr;

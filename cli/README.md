@@ -47,6 +47,10 @@ ouroboros --github owner/repo
 ouroboros --parallel --max-parallel 4
 ouroboros --branch-per-task --create-pr
 ouroboros --opencode --dry-run
+
+# Experiment mode (eval-driven keep/discard; see repo examples/autoresearch/)
+ouroboros --experiment
+ouroboros --experiment-file .ouroboros/experiment.yaml
 ```
 
 ## Supported AI Engines

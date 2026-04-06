@@ -11,7 +11,7 @@ export async function createAgentWorktree(
 	agentNum: number,
 	baseBranch: string,
 	worktreeBase: string,
-	originalDir: string
+	originalDir: string,
 ): Promise<{ worktreeDir: string; branchName: string }> {
 	const branchName = `ouroboros/agent-${agentNum}-${slugify(taskName)}`;
 	const worktreeDir = join(worktreeBase, `agent-${agentNum}`);
@@ -48,7 +48,7 @@ export async function createAgentWorktree(
 export async function cleanupAgentWorktree(
 	worktreeDir: string,
 	branchName: string,
-	originalDir: string
+	originalDir: string,
 ): Promise<{ leftInPlace: boolean }> {
 	// Check for uncommitted changes
 	if (existsSync(worktreeDir)) {

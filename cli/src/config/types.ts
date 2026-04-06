@@ -42,6 +42,32 @@ export const OuroborosConfigSchema = z.object({
 export type OuroborosConfig = z.infer<typeof OuroborosConfigSchema>;
 
 /**
+ * Experiment mode config (.ouroboros/experiment.yaml) — mirrors bash experiment mode.
+ */
+export const ExperimentEvaluatorSchema = z.object({
+	command: z.string(),
+});
+
+export const ExperimentPrimaryMetricSchema = z.object({
+	direction: z.enum(["min", "max"]).default("min"),
+	improvement_threshold: z.coerce.number().default(0),
+});
+
+export const ExperimentConfigSchema = z.object({
+	evaluator: ExperimentEvaluatorSchema,
+	primary_metric: ExperimentPrimaryMetricSchema,
+	max_attempts: z.coerce.number().int().positive().default(10),
+	wall_clock_budget_sec: z.coerce.number().int().positive().default(3600),
+	eval_timeout_sec: z.coerce.number().int().positive().default(600),
+	base_branch: z.string().optional(),
+	allowed_paths: z.array(z.string()).default(["**"]),
+	forbidden_paths: z.array(z.string()).default([]),
+	program_file: z.string().default(".ouroboros/programs/autoresearch.md"),
+});
+
+export type ExperimentConfig = z.infer<typeof ExperimentConfigSchema>;
+
+/**
  * Runtime options parsed from CLI args
  */
 export interface RuntimeOptions {
@@ -83,6 +109,10 @@ export interface RuntimeOptions {
 	githubLabel: string;
 	/** Auto-commit changes */
 	autoCommit: boolean;
+	/** Autoresearch-style experiment loop */
+	experimentMode: boolean;
+	/** Path to experiment.yaml */
+	experimentFile: string;
 }
 
 /**
@@ -108,4 +138,6 @@ export const DEFAULT_OPTIONS: RuntimeOptions = {
 	githubRepo: "",
 	githubLabel: "",
 	autoCommit: true,
+	experimentMode: false,
+	experimentFile: ".ouroboros/experiment.yaml",
 };
