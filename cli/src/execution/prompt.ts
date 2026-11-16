@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { loadBoundaries, loadProjectContext, loadRules } from "../config/loader.ts";
+import { loadSkillCatalog } from "../config/skills.ts";
 
 interface PromptOptions {
 	task: string;
@@ -15,6 +16,8 @@ export function buildPrompt(options: PromptOptions): string {
 	const { task, autoCommit = true, workDir = process.cwd() } = options;
 
 	const parts: string[] = [];
+	const skills = loadSkillCatalog(workDir);
+	if (skills) parts.push(skills);
 
 	// Add project context if available
 	const context = loadProjectContext(workDir);
@@ -101,6 +104,8 @@ export function buildExperimentPrompt(options: ExperimentPromptOptions): string 
 	} = options;
 
 	const parts: string[] = [];
+	const skills = loadSkillCatalog(workDir);
+	if (skills) parts.push(skills);
 
 	const context = loadProjectContext(workDir);
 	if (context) {
