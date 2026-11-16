@@ -6,6 +6,7 @@ import type { Task, TaskSource } from "../tasks/types.ts";
 import { logDebug, logError, logInfo, logSuccess } from "../ui/logger.ts";
 import { notifyTaskComplete, notifyTaskFailed } from "../ui/notify.ts";
 import { ProgressSpinner } from "../ui/spinner.ts";
+import { rejectBlankResult, tasksToRun } from "./pending.ts";
 import { buildPrompt } from "./prompt.ts";
 import { isRetryableError, sleep, withRetry } from "./retry.ts";
 
@@ -60,6 +61,7 @@ export async function runSequential(options: ExecutionOptions): Promise<Executio
 	};
 
 	let iteration = 0;
+	const skipped = new Set<string>();
 
 	while (true) {
 		// Check iteration limit
@@ -68,10 +70,15 @@ export async function runSequential(options: ExecutionOptions): Promise<Executio
 			break;
 		}
 
-		// Get next task
-		const task = await taskSource.getNextTask();
+		// Skip tasks this run already failed or previewed. Leaving them open
+		// means a later run can retry, without looping on the same task.
+		const task = tasksToRun(await taskSource.getAllTasks(), skipped)[0];
 		if (!task) {
-			logSuccess("All tasks completed!");
+			if (result.tasksFailed > 0) {
+				logInfo(`Stopped after ${result.tasksFailed} failed task(s)`);
+			} else {
+				logSuccess(dryRun ? "Dry run finished" : "All tasks completed!");
+			}
 			break;
 		}
 
@@ -103,6 +110,7 @@ export async function runSequential(options: ExecutionOptions): Promise<Executio
 
 		if (dryRun) {
 			spinner.success("(dry run) Skipped");
+			skipped.add(task.id);
 		} else {
 			try {
 				aiResult = await withRetry(
@@ -124,6 +132,8 @@ export async function runSequential(options: ExecutionOptions): Promise<Executio
 						},
 					},
 				);
+
+				aiResult = rejectBlankResult(aiResult);
 
 				if (aiResult.success) {
 					spinner.success();
@@ -153,12 +163,14 @@ export async function runSequential(options: ExecutionOptions): Promise<Executio
 						}
 					}
 				} else {
+					skipped.add(task.id);
 					spinner.error(aiResult.error || "Unknown error");
 					logTaskProgress(task.title, "failed", workDir);
 					result.tasksFailed++;
 					notifyTaskFailed(task.title, aiResult.error || "Unknown error");
 				}
 			} catch (error) {
+				skipped.add(task.id);
 				const errorMsg = error instanceof Error ? error.message : String(error);
 				spinner.error(errorMsg);
 				logTaskProgress(task.title, "failed", workDir);
