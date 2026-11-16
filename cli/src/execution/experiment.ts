@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import simpleGit from "simple-git";
@@ -9,6 +8,7 @@ import { createEngine, isEngineAvailable } from "../engines/index.ts";
 import type { AIEngineName, AIResult } from "../engines/types.ts";
 import { logError, logInfo, logSuccess, logWarn, setVerbose } from "../ui/logger.ts";
 import { boundaryViolations } from "./boundaries.ts";
+import { runEvaluatorCommand } from "./evaluator-process.ts";
 import { isDirectCandidate, restoreAttempt } from "./experiment-git.ts";
 import { buildExperimentPrompt } from "./prompt.ts";
 import { isRetryableError, withRetry } from "./retry.ts";
@@ -16,36 +16,6 @@ import { isRetryableError, withRetry } from "./retry.ts";
 import { metricImproved, successfulEvaluation } from "./evaluation.ts";
 
 const OUROBOROS_DIR = ".ouroboros";
-
-function runEvaluatorCommand(
-	command: string,
-	cwd: string,
-	timeoutSec: number,
-): Promise<{ code: number; combined: string }> {
-	return new Promise((resolve) => {
-		const child = spawn("bash", ["-c", command], {
-			cwd,
-			env: process.env,
-		});
-		let combined = "";
-		const onData = (d: Buffer): void => {
-			combined += d.toString();
-		};
-		child.stdout?.on("data", onData);
-		child.stderr?.on("data", onData);
-		const timer = setTimeout(() => {
-			child.kill("SIGKILL");
-		}, timeoutSec * 1000);
-		child.on("close", (code) => {
-			clearTimeout(timer);
-			resolve({ code: code ?? 1, combined });
-		});
-		child.on("error", () => {
-			clearTimeout(timer);
-			resolve({ code: 1, combined });
-		});
-	});
-}
 
 function experimentTimestamp(): string {
 	return new Date().toISOString().slice(0, 19);
