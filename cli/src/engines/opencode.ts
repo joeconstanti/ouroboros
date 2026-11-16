@@ -1,4 +1,4 @@
-import { BaseAIEngine, checkForErrors, execCommand } from "./base.ts";
+import { BaseAIEngine, checkForErrors, execCommand, resultFromOutput } from "./base.ts";
 import type { AIResult } from "./types.ts";
 
 /**
@@ -32,14 +32,7 @@ export class OpenCodeEngine extends BaseAIEngine {
 
 		// Parse OpenCode JSON format
 		const { response, inputTokens, outputTokens, cost } = this.parseOutput(output);
-
-		return {
-			success: exitCode === 0,
-			response,
-			inputTokens,
-			outputTokens,
-			cost,
-		};
+		return resultFromOutput(exitCode, response, { inputTokens, outputTokens, cost });
 	}
 
 	private parseOutput(output: string): {
@@ -83,7 +76,7 @@ export class OpenCodeEngine extends BaseAIEngine {
 			}
 		}
 
-		response = textParts.join("") || "Task completed";
+		response = textParts.join("");
 
 		return { response, inputTokens, outputTokens, cost };
 	}

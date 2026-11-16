@@ -1,4 +1,4 @@
-import { BaseAIEngine, checkForErrors, execCommand } from "./base.ts";
+import { BaseAIEngine, checkForErrors, execCommand, resultFromOutput } from "./base.ts";
 import type { AIResult } from "./types.ts";
 
 /**
@@ -31,14 +31,9 @@ export class DroidEngine extends BaseAIEngine {
 
 		// Parse Droid output
 		const { response, durationMs } = this.parseOutput(output);
-
-		return {
-			success: exitCode === 0,
-			response,
-			inputTokens: 0, // Droid doesn't expose token counts in exec mode
-			outputTokens: 0,
+		return resultFromOutput(exitCode, response, {
 			cost: durationMs > 0 ? `duration:${durationMs}` : undefined,
-		};
+		});
 	}
 
 	private parseOutput(output: string): { response: string; durationMs: number } {
@@ -52,7 +47,7 @@ export class DroidEngine extends BaseAIEngine {
 
 				// Check completion event
 				if (parsed.type === "completion") {
-					response = parsed.finalText || "Task completed";
+					if (typeof parsed.finalText === "string") response = parsed.finalText;
 					if (typeof parsed.durationMs === "number") {
 						durationMs = parsed.durationMs;
 					}
@@ -62,6 +57,6 @@ export class DroidEngine extends BaseAIEngine {
 			}
 		}
 
-		return { response: response || "Task completed", durationMs };
+		return { response, durationMs };
 	}
 }
