@@ -84,6 +84,13 @@ export async function runExperimentLoop(options: RuntimeOptions): Promise<void> 
 			"Experiment mode requires a clean working tree. Commit or stash existing changes first.",
 		);
 	}
+	try {
+		await git.raw(["check-ignore", "--quiet", ".ouroboros/experiments/"]);
+	} catch {
+		throw new Error(
+			"Ignore .ouroboros/experiments/ in Git before running experiments so cleanup preserves run evidence.",
+		);
+	}
 	const engine = createEngine(options.aiEngine as AIEngineName);
 	if (!(await isEngineAvailable(options.aiEngine as AIEngineName))) {
 		throw new Error(`${engine.name} CLI not found.`);
@@ -145,12 +152,22 @@ export async function runExperimentLoop(options: RuntimeOptions): Promise<void> 
 	);
 	const baselineLog = join(workDir, runDir, "baseline.log");
 
+	const baselineCommit = (await git.revparse("HEAD")).trim();
 	const { code: baselineCode, combined: baselineOut } = await runEvaluatorCommand(
 		evalCmd,
 		workDir,
 		evalTimeout,
 	);
 	writeFileSync(baselineLog, baselineOut, "utf-8");
+	assertFrozen();
+	if (
+		!(await git.status()).isClean() ||
+		(await git.revparse("HEAD")).trim() !== baselineCommit ||
+		(await git.branch()).current !== expBranch
+	) {
+		await restoreAttempt(git, expBranch, baselineCommit);
+		throw new Error(`Baseline evaluator modified Git state; see ${baselineLog}`);
+	}
 	const parsedBase = successfulEvaluation(baselineCode, baselineOut);
 	if (!parsedBase) {
 		throw new Error(`Baseline evaluator failed or emitted invalid output; see ${baselineLog}`);
