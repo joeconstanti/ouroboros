@@ -11,7 +11,7 @@ failures=0
 status=ok
 
 if [[ -d "cli" ]] && [[ -f "cli/package.json" ]]; then
-	if ! (cd cli && bun run check); then
+	if ! (cd cli && ./node_modules/.bin/biome check . && bun test && bun run build); then
 		failures=$((failures + 1))
 		status=fail
 	fi

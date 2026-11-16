@@ -20,11 +20,18 @@ test_cmd=""
 lint_cmd=""
 build_cmd=""
 
-if [[ -f ".ouroboros/config.yaml" ]] && command -v yq &>/dev/null; then
-	test_cmd="$(yq -r '.commands.test // ""' .ouroboros/config.yaml)"
-	lint_cmd="$(yq -r '.commands.lint // ""' .ouroboros/config.yaml)"
-	build_cmd="$(yq -r '.commands.build // ""' .ouroboros/config.yaml)"
-fi
+evaluation_error() {
+ echo "OUROBOROS_EVAL_STATUS=fail"
+ echo "OUROBOROS_EVAL_PRIMARY=1"
+ echo "OUROBOROS_EVAL_DURATION_MS=0"
+ echo "$1" >&2
+ exit 1
+}
+[[ -f .ouroboros/config.yaml ]] || evaluation_error "Missing .ouroboros/config.yaml"
+command -v yq &>/dev/null || evaluation_error "Install mikefarah/yq to read evaluator commands"
+test_cmd="$(yq -r '.commands.test // ""' .ouroboros/config.yaml)" || evaluation_error "Invalid evaluator configuration"
+lint_cmd="$(yq -r '.commands.lint // ""' .ouroboros/config.yaml)" || evaluation_error "Invalid evaluator configuration"
+build_cmd="$(yq -r '.commands.build // ""' .ouroboros/config.yaml)" || evaluation_error "Invalid evaluator configuration"
 
 if [[ -n "${test_cmd// /}" ]]; then
 	if ! run_step bash -c "$test_cmd"; then
@@ -47,15 +54,9 @@ if [[ -n "${build_cmd// /}" ]]; then
 	fi
 fi
 
-# If no commands configured, still succeed with PRIMARY=0 (user should set commands in config)
-if [[ -z "${test_cmd// /}" && -z "${lint_cmd// /}" && -z "${build_cmd// /}" ]]; then
-	if [[ "${OUROBOROS_EVAL_STRICT:-}" == "1" ]]; then
-		echo "OUROBOROS_EVAL_STATUS=fail" >&2
-		echo "OUROBOROS_EVAL_PRIMARY=1" >&2
-		echo "OUROBOROS_EVAL_DURATION_MS=0" >&2
-		echo "No commands.test, commands.lint, or commands.build in .ouroboros/config.yaml" >&2
-		exit 1
-	fi
+# An empty evaluator provides no evidence of correctness.
+if [[ -z "${test_cmd//[[:space:]]/}" && -z "${lint_cmd//[[:space:]]/}" && -z "${build_cmd//[[:space:]]/}" ]]; then
+ evaluation_error "Configure commands.test, commands.lint, or commands.build in .ouroboros/config.yaml"
 fi
 
 end_ms="$(date +%s)000"
