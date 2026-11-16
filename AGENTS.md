@@ -48,7 +48,7 @@ Run from `cli/` unless noted.
 - CLI: `bun run dev -- --experiment` (optional `--experiment-file <path>`).
 - Evaluators: `scripts/eval.sh` (generic), `scripts/eval-ouroboros.sh` (this repo).
 - CLI logs: `.ouroboros/experiments/runs/<run-id>/` contains `manifest.json`, `results.tsv`, and evaluator logs (gitignored).
-- Bash logs remain `.ouroboros/experiments/results.tsv`.
+- Bash experiment mode delegates to the same Bun runner; install CLI dependencies first.
 
 ## Source layout
 - CLI entrypoint: `cli/src/index.ts`
@@ -132,7 +132,8 @@ Run from `cli/` unless noted.
 - When updating docs, keep wording concise and usage-driven.
 
 ## Quality checks before shipping
-- `bun run check`
+- `bun run check` (formatting); `bun run check:ci` for read-only validation
+- `bun test`
 - `bun run build` (or `bun run build:all` for release)
 - Verify CLI entrypoint still runs: `bun run dev --help`
 

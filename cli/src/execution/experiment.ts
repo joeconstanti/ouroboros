@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import simpleGit from "simple-git";
 import { loadExperimentConfig } from "../config/experiment-loader.ts";
 import { loadBoundaries } from "../config/loader.ts";
@@ -84,10 +84,34 @@ export async function runExperimentLoop(options: RuntimeOptions): Promise<void> 
 			"Experiment mode requires a clean working tree. Commit or stash existing changes first.",
 		);
 	}
+	try {
+		await git.raw(["check-ignore", "--quiet", ".ouroboros/experiments/"]);
+	} catch {
+		throw new Error(
+			"Ignore .ouroboros/experiments/ in Git before running experiments so cleanup preserves run evidence.",
+		);
+	}
 	const engine = createEngine(options.aiEngine as AIEngineName);
 	if (!(await isEngineAvailable(options.aiEngine as AIEngineName))) {
 		throw new Error(`${engine.name} CLI not found.`);
 	}
+	const frozenBoundaries = loadBoundaries(workDir);
+	const frozenFiles = [options.experimentFile, exp.program_file, ".ouroboros/config.yaml"].map(
+		(path) => resolve(workDir, path),
+	);
+	const frozenContents = frozenFiles.map((path) =>
+		existsSync(path) ? readFileSync(path, "utf-8") : null,
+	);
+	const assertFrozen = (): void => {
+		if (
+			frozenFiles.some(
+				(path, i) => (existsSync(path) ? readFileSync(path, "utf-8") : null) !== frozenContents[i],
+			)
+		)
+			throw new Error(
+				"Experiment configuration or protocol changed; stopping. Restore the frozen harness before resuming.",
+			);
+	};
 	const baseBranch = options.baseBranch || exp.base_branch || (await git.branch()).current;
 	if (!baseBranch) throw new Error("Detached HEAD: specify --base-branch.");
 	await git.checkout(baseBranch);
@@ -128,12 +152,22 @@ export async function runExperimentLoop(options: RuntimeOptions): Promise<void> 
 	);
 	const baselineLog = join(workDir, runDir, "baseline.log");
 
+	const baselineCommit = (await git.revparse("HEAD")).trim();
 	const { code: baselineCode, combined: baselineOut } = await runEvaluatorCommand(
 		evalCmd,
 		workDir,
 		evalTimeout,
 	);
 	writeFileSync(baselineLog, baselineOut, "utf-8");
+	assertFrozen();
+	if (
+		!(await git.status()).isClean() ||
+		(await git.revparse("HEAD")).trim() !== baselineCommit ||
+		(await git.branch()).current !== expBranch
+	) {
+		await restoreAttempt(git, expBranch, baselineCommit);
+		throw new Error(`Baseline evaluator modified Git state; see ${baselineLog}`);
+	}
 	const parsedBase = successfulEvaluation(baselineCode, baselineOut);
 	if (!parsedBase) {
 		throw new Error(`Baseline evaluator failed or emitted invalid output; see ${baselineLog}`);
@@ -202,6 +236,7 @@ export async function runExperimentLoop(options: RuntimeOptions): Promise<void> 
 			continue;
 		}
 
+		assertFrozen();
 		attemptedCommit = (await git.revparse("HEAD")).trim();
 		if (!aiResult?.success) {
 			await restoreAttempt(git, expBranch, bestCommit);
@@ -231,7 +266,7 @@ export async function runExperimentLoop(options: RuntimeOptions): Promise<void> 
 			.filter(Boolean);
 		const violations = boundaryViolations(changedPaths, exp.allowed_paths, [
 			...exp.forbidden_paths,
-			...loadBoundaries(workDir),
+			...frozenBoundaries,
 			options.experimentFile,
 			exp.program_file,
 		]);
@@ -250,11 +285,13 @@ export async function runExperimentLoop(options: RuntimeOptions): Promise<void> 
 			evalTimeout,
 		);
 		writeFileSync(attemptLog, attemptOut, "utf-8");
+		assertFrozen();
 		const parsed = successfulEvaluation(attemptCode, attemptOut);
 		if (
 			!parsed ||
 			!(await git.status()).isClean() ||
-			(await git.revparse("HEAD")).trim() !== candidateCommit
+			(await git.revparse("HEAD")).trim() !== candidateCommit ||
+			(await git.branch()).current !== expBranch
 		) {
 			logWarn("Could not parse evaluator output; reverting.");
 			await restoreAttempt(git, expBranch, bestCommit);
