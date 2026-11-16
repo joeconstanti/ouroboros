@@ -1,4 +1,5 @@
-import { appendFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import simpleGit from "simple-git";
 import { loadExperimentConfig } from "../config/experiment-loader.ts";
@@ -21,18 +22,28 @@ function experimentTimestamp(): string {
 	return new Date().toISOString().slice(0, 19);
 }
 
-function appendTsv(workDir: string, resultsPath: string, row: string): void {
+function appendTsv(
+	workDir: string,
+	resultsPath: string,
+	row: string,
+	commit: string,
+	hypothesis: string,
+): void {
 	const dir = join(workDir, OUROBOROS_DIR, "experiments");
 	mkdirSync(dir, { recursive: true });
 	const full = join(workDir, resultsPath);
 	if (!existsSync(full)) {
 		writeFileSync(
 			full,
-			"timestamp\tattempt\tdecision\tbaseline\tprimary\tbest_before\tstatus_eval\n",
+			"timestamp\tattempt\tdecision\tbaseline\tprimary\tbest_before\tstatus_eval\tcommit\thypothesis\n",
 			"utf-8",
 		);
 	}
-	appendFileSync(full, `${row}\n`, "utf-8");
+	appendFileSync(
+		full,
+		`${row}\t${commit}\t${hypothesis.replace(/[\t\r\n]+/g, " ").trim()}\n`,
+		"utf-8",
+	);
 }
 
 /**
@@ -81,7 +92,8 @@ export async function runExperimentLoop(options: RuntimeOptions): Promise<void> 
 	if (!baseBranch) throw new Error("Detached HEAD: specify --base-branch.");
 	await git.checkout(baseBranch);
 
-	const expBranch = `ouroboros/experiment-${Date.now()}`;
+	const runId = `${Date.now()}-${randomUUID().slice(0, 8)}`;
+	const expBranch = `ouroboros/experiment-${runId}`;
 	await git.checkoutLocalBranch(expBranch).catch(async () => {
 		await git.checkout(expBranch);
 	});
@@ -95,10 +107,27 @@ export async function runExperimentLoop(options: RuntimeOptions): Promise<void> 
 	const budgetSec = exp.wall_clock_budget_sec;
 	const programFile = exp.program_file;
 
-	mkdirSync(join(workDir, OUROBOROS_DIR, "experiments", "runs"), { recursive: true });
-	writeFileSync(join(workDir, OUROBOROS_DIR, "experiments", "last-hypothesis.txt"), "", "utf-8");
+	const runDir = join(OUROBOROS_DIR, "experiments", "runs", runId);
+	mkdirSync(join(workDir, runDir), { recursive: true });
+	const hypothesisFile = join(workDir, OUROBOROS_DIR, "experiments", "last-hypothesis.txt");
+	writeFileSync(hypothesisFile, "", "utf-8");
+	writeFileSync(
+		join(workDir, runDir, "manifest.json"),
+		JSON.stringify(
+			{
+				runId,
+				branch: expBranch,
+				startingCommit: (await git.revparse("HEAD")).trim(),
+				engine: options.aiEngine,
+				config: exp,
+				runtime: Bun.version,
+			},
+			null,
+			2,
+		),
+	);
+	const baselineLog = join(workDir, runDir, "baseline.log");
 
-	const baselineLog = join(workDir, OUROBOROS_DIR, "experiments", "runs", "baseline.log");
 	const { code: baselineCode, combined: baselineOut } = await runEvaluatorCommand(
 		evalCmd,
 		workDir,
@@ -118,7 +147,19 @@ export async function runExperimentLoop(options: RuntimeOptions): Promise<void> 
 	let bestCommit = (await git.revparse("HEAD")).trim();
 
 	const wallStart = Date.now();
-	const resultsTsv = join(OUROBOROS_DIR, "experiments", "results.tsv");
+	const resultsTsv = join(runDir, "results.tsv");
+	let attemptedCommit = bestCommit;
+	const record = (row: string): void =>
+		appendTsv(
+			workDir,
+			resultsTsv,
+			row,
+			attemptedCommit,
+			existsSync(hypothesisFile) ? readFileSync(hypothesisFile, "utf-8") : "",
+		);
+	record(
+		`${experimentTimestamp()}\t0\tbaseline\t${baselineScore}\t${baselineScore}\t${baselineScore}\tok`,
+	);
 
 	for (let att = 1; att <= maxAttempts; att++) {
 		if ((Date.now() - wallStart) / 1000 > budgetSec) {
@@ -127,6 +168,8 @@ export async function runExperimentLoop(options: RuntimeOptions): Promise<void> 
 		}
 
 		logInfo(`Experiment attempt ${att} / ${maxAttempts}`);
+		writeFileSync(hypothesisFile, "", "utf-8");
+		attemptedCommit = bestCommit;
 
 		const prompt = buildExperimentPrompt({
 			attempt: att,
@@ -153,22 +196,16 @@ export async function runExperimentLoop(options: RuntimeOptions): Promise<void> 
 				{ maxRetries: options.maxRetries, retryDelay: options.retryDelay },
 			);
 		} catch {
+			attemptedCommit = (await git.revparse("HEAD")).trim();
 			await restoreAttempt(git, expBranch, bestCommit);
-			appendTsv(
-				workDir,
-				resultsTsv,
-				`${experimentTimestamp()}\t${att}\taifail\t${baselineScore}\t\t${bestScore}\t`,
-			);
+			record(`${experimentTimestamp()}\t${att}\taifail\t${baselineScore}\t\t${bestScore}\t`);
 			continue;
 		}
 
+		attemptedCommit = (await git.revparse("HEAD")).trim();
 		if (!aiResult?.success) {
 			await restoreAttempt(git, expBranch, bestCommit);
-			appendTsv(
-				workDir,
-				resultsTsv,
-				`${experimentTimestamp()}\t${att}\taifail\t${baselineScore}\t\t${bestScore}\t`,
-			);
+			record(`${experimentTimestamp()}\t${att}\taifail\t${baselineScore}\t\t${bestScore}\t`);
 			continue;
 		}
 
@@ -177,21 +214,13 @@ export async function runExperimentLoop(options: RuntimeOptions): Promise<void> 
 		if (nc === 0) {
 			await restoreAttempt(git, expBranch, bestCommit);
 			logWarn("No new commit; skipping.");
-			appendTsv(
-				workDir,
-				resultsTsv,
-				`${experimentTimestamp()}\t${att}\tnocommit\t${baselineScore}\t\t${bestScore}\t`,
-			);
+			record(`${experimentTimestamp()}\t${att}\tnocommit\t${baselineScore}\t\t${bestScore}\t`);
 			continue;
 		}
 		if (nc > 1 || !(await isDirectCandidate(git, expBranch, bestCommit))) {
 			logWarn("Multiple commits; resetting to best.");
 			await restoreAttempt(git, expBranch, bestCommit);
-			appendTsv(
-				workDir,
-				resultsTsv,
-				`${experimentTimestamp()}\t${att}\tmulticommit\t${baselineScore}\t\t${bestScore}\t`,
-			);
+			record(`${experimentTimestamp()}\t${att}\tmulticommit\t${baselineScore}\t\t${bestScore}\t`);
 			continue;
 		}
 
@@ -209,15 +238,11 @@ export async function runExperimentLoop(options: RuntimeOptions): Promise<void> 
 		if (violations.length > 0 || !(await git.status()).isClean()) {
 			logWarn(`Candidate violates boundaries or has uncommitted changes: ${violations.join(", ")}`);
 			await restoreAttempt(git, expBranch, bestCommit);
-			appendTsv(
-				workDir,
-				resultsTsv,
-				`${experimentTimestamp()}\t${att}\tboundary\t${baselineScore}\t\t${bestScore}\t`,
-			);
+			record(`${experimentTimestamp()}\t${att}\tboundary\t${baselineScore}\t\t${bestScore}\t`);
 			continue;
 		}
 
-		const attemptLog = join(workDir, OUROBOROS_DIR, "experiments", "runs", `attempt-${att}.log`);
+		const attemptLog = join(workDir, runDir, `attempt-${att}.log`);
 		const candidateCommit = (await git.revparse("HEAD")).trim();
 		const { code: attemptCode, combined: attemptOut } = await runEvaluatorCommand(
 			evalCmd,
@@ -233,11 +258,7 @@ export async function runExperimentLoop(options: RuntimeOptions): Promise<void> 
 		) {
 			logWarn("Could not parse evaluator output; reverting.");
 			await restoreAttempt(git, expBranch, bestCommit);
-			appendTsv(
-				workDir,
-				resultsTsv,
-				`${experimentTimestamp()}\t${att}\tunparsed\t${baselineScore}\t\t${bestScore}\t`,
-			);
+			record(`${experimentTimestamp()}\t${att}\tunparsed\t${baselineScore}\t\t${bestScore}\t`);
 			continue;
 		}
 
@@ -249,19 +270,16 @@ export async function runExperimentLoop(options: RuntimeOptions): Promise<void> 
 
 		if (metricImproved(direction, threshold, bestScore, newNum)) {
 			logSuccess(`KEEP primary=${parsed.primary} (was ${bestScore})`);
+			const bestBefore = bestScore;
 			bestScore = newNum;
 			bestCommit = (await git.revparse("HEAD")).trim();
-			appendTsv(
-				workDir,
-				resultsTsv,
-				`${experimentTimestamp()}\t${att}\tkeep\t${baselineScore}\t${parsed.primary}\t${bestScore}\t${parsed.status}`,
+			record(
+				`${experimentTimestamp()}\t${att}\tkeep\t${baselineScore}\t${parsed.primary}\t${bestBefore}\t${parsed.status}`,
 			);
 		} else {
 			logWarn(`DISCARD primary=${parsed.primary} (best=${bestScore})`);
 			await restoreAttempt(git, expBranch, bestCommit);
-			appendTsv(
-				workDir,
-				resultsTsv,
+			record(
 				`${experimentTimestamp()}\t${att}\tdiscard\t${baselineScore}\t${parsed.primary}\t${bestScore}\t${parsed.status}`,
 			);
 		}
