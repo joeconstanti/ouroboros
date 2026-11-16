@@ -3,10 +3,12 @@ import { appendFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import simpleGit from "simple-git";
 import { loadExperimentConfig } from "../config/experiment-loader.ts";
+import { loadBoundaries } from "../config/loader.ts";
 import type { RuntimeOptions } from "../config/types.ts";
 import { createEngine, isEngineAvailable } from "../engines/index.ts";
 import type { AIEngineName, AIResult } from "../engines/types.ts";
 import { logError, logInfo, logSuccess, logWarn, setVerbose } from "../ui/logger.ts";
+import { boundaryViolations } from "./boundaries.ts";
 import { buildExperimentPrompt } from "./prompt.ts";
 import { isRetryableError, withRetry } from "./retry.ts";
 
@@ -212,6 +214,28 @@ export async function runExperimentLoop(options: RuntimeOptions): Promise<void> 
 				workDir,
 				resultsTsv,
 				`${experimentTimestamp()}\t${att}\tmulticommit\t${baselineScore}\t\t${bestScore}\t`,
+			);
+			continue;
+		}
+
+		const changedPaths = (
+			await git.raw(["diff", "--name-only", "-z", "--no-renames", bestCommit, "HEAD"])
+		)
+			.split("\0")
+			.filter(Boolean);
+		const violations = boundaryViolations(changedPaths, exp.allowed_paths, [
+			...exp.forbidden_paths,
+			...loadBoundaries(workDir),
+			options.experimentFile,
+			exp.program_file,
+		]);
+		if (violations.length > 0 || !(await git.status()).isClean()) {
+			logWarn(`Candidate violates boundaries or has uncommitted changes: ${violations.join(", ")}`);
+			await git.raw(["reset", "--hard", bestCommit]);
+			appendTsv(
+				workDir,
+				resultsTsv,
+				`${experimentTimestamp()}\t${att}\tboundary\t${baselineScore}\t\t${bestScore}\t`,
 			);
 			continue;
 		}
