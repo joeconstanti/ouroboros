@@ -45,12 +45,12 @@ export type OuroborosConfig = z.infer<typeof OuroborosConfigSchema>;
  * Experiment mode config (.ouroboros/experiment.yaml) — mirrors bash experiment mode.
  */
 export const ExperimentEvaluatorSchema = z.object({
-	command: z.string(),
+	command: z.string().trim().min(1),
 });
 
 export const ExperimentPrimaryMetricSchema = z.object({
 	direction: z.enum(["min", "max"]).default("min"),
-	improvement_threshold: z.coerce.number().default(0),
+	improvement_threshold: z.coerce.number().finite().nonnegative().default(0),
 });
 
 export const ExperimentConfigSchema = z.object({

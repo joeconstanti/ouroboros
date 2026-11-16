@@ -11,42 +11,9 @@ import { logError, logInfo, logSuccess, logWarn, setVerbose } from "../ui/logger
 import { buildExperimentPrompt } from "./prompt.ts";
 import { isRetryableError, withRetry } from "./retry.ts";
 
+import { metricImproved, parseEvalOutput } from "./evaluation.ts";
+
 const OUROBOROS_DIR = ".ouroboros";
-
-type ParsedEval = {
-	status: string;
-	primary: string;
-	durationMs: string;
-};
-
-function parseEvalOutput(text: string): ParsedEval | null {
-	let status = "";
-	let primary = "";
-	let durationMs = "";
-	for (const line of text.split("\n")) {
-		if (line.startsWith("OUROBOROS_EVAL_STATUS=")) {
-			status = line.slice("OUROBOROS_EVAL_STATUS=".length).trim();
-		} else if (line.startsWith("OUROBOROS_EVAL_PRIMARY=")) {
-			primary = line.slice("OUROBOROS_EVAL_PRIMARY=".length).trim();
-		} else if (line.startsWith("OUROBOROS_EVAL_DURATION_MS=")) {
-			durationMs = line.slice("OUROBOROS_EVAL_DURATION_MS=".length).trim();
-		}
-	}
-	if (primary === "") return null;
-	return { status, primary, durationMs };
-}
-
-function metricImproved(
-	direction: "min" | "max",
-	threshold: number,
-	best: number,
-	next: number,
-): boolean {
-	if (direction === "min") {
-		return next < best - threshold;
-	}
-	return next > best + threshold;
-}
 
 function runEvaluatorCommand(
 	command: string,
