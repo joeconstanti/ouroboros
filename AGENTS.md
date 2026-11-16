@@ -31,8 +31,9 @@ Run from `cli/` unless noted.
   - Treats formatting and linting as one step.
 
 ## Test commands
-- No test runner is configured in `cli/package.json`.
-- There is no standard single-test command yet.
+- Regression tests use Bun's built-in test runner.
+- Full regression suite: `bun test` from `cli/`.
+- Single file: `bun test src/execution/evaluation.test.ts` from `cli/`.
 - If tests are added later, document:
   - Full suite command
   - Single file/test command with an example
@@ -46,7 +47,8 @@ Run from `cli/` unless noted.
 - Bash: `./ouroboros.sh --experiment` with `.ouroboros/experiment.yaml` (see `examples/autoresearch/`).
 - CLI: `bun run dev -- --experiment` (optional `--experiment-file <path>`).
 - Evaluators: `scripts/eval.sh` (generic), `scripts/eval-ouroboros.sh` (this repo).
-- Logs: `.ouroboros/experiments/results.tsv` (gitignored local dir).
+- CLI logs: `.ouroboros/experiments/runs/<run-id>/` contains `manifest.json`, `results.tsv`, and evaluator logs (gitignored).
+- Bash logs remain `.ouroboros/experiments/results.tsv`.
 
 ## Source layout
 - CLI entrypoint: `cli/src/index.ts`
@@ -133,6 +135,13 @@ Run from `cli/` unless noted.
 - `bun run check`
 - `bun run build` (or `bun run build:all` for release)
 - Verify CLI entrypoint still runs: `bun run dev --help`
+
+## Project skills
+- Shared skills live in `.agents/skills/`; Claude, Cursor, and OpenCode directories link to that copy.
+- `autoresearch`: experiment setup and trustworthy metric optimization.
+- `evidence-debugging`: agent/evaluator/CLI root-cause investigation.
+- `skill-evaluation`: paired evaluation before promoting skill changes.
+- The CLI includes only skill metadata in prompts; read matching skill bodies on demand.
 
 ## Notes for agents
 - No Cursor/Copilot rules are present.
