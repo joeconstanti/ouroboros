@@ -34,3 +34,9 @@ export function metricImproved(
 	}
 	return next > best + threshold;
 }
+
+/** Scores are usable only when the process and its quality gate both succeed. */
+export function successfulEvaluation(code: number, output: string): ParsedEval | null {
+	const parsed = parseEvalOutput(output);
+	return code === 0 && parsed?.status === "ok" ? parsed : null;
+}

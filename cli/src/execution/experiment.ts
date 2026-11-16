@@ -11,7 +11,7 @@ import { logError, logInfo, logSuccess, logWarn, setVerbose } from "../ui/logger
 import { buildExperimentPrompt } from "./prompt.ts";
 import { isRetryableError, withRetry } from "./retry.ts";
 
-import { metricImproved, parseEvalOutput } from "./evaluation.ts";
+import { metricImproved, successfulEvaluation } from "./evaluation.ts";
 
 const OUROBOROS_DIR = ".ouroboros";
 
@@ -113,13 +113,17 @@ export async function runExperimentLoop(options: RuntimeOptions): Promise<void> 
 	writeFileSync(join(workDir, OUROBOROS_DIR, "experiments", "last-hypothesis.txt"), "", "utf-8");
 
 	const baselineLog = join(workDir, OUROBOROS_DIR, "experiments", "runs", "baseline.log");
-	const { combined: baselineOut } = await runEvaluatorCommand(evalCmd, workDir, evalTimeout);
+	const { code: baselineCode, combined: baselineOut } = await runEvaluatorCommand(
+		evalCmd,
+		workDir,
+		evalTimeout,
+	);
 	writeFileSync(baselineLog, baselineOut, "utf-8");
-	const parsedBase = parseEvalOutput(baselineOut);
-	const baselineScore = parsedBase?.primary ?? "0";
+	const parsedBase = successfulEvaluation(baselineCode, baselineOut);
 	if (!parsedBase) {
-		logWarn(`Baseline did not emit OUROBOROS_EVAL_PRIMARY (see ${baselineLog}). Using 0.`);
+		throw new Error(`Baseline evaluator failed or emitted invalid output; see ${baselineLog}`);
 	}
+	const baselineScore = parsedBase.primary;
 	logInfo(`Baseline primary=${baselineScore}`);
 
 	let bestScore = Number.parseFloat(baselineScore);
@@ -208,9 +212,13 @@ export async function runExperimentLoop(options: RuntimeOptions): Promise<void> 
 		}
 
 		const attemptLog = join(workDir, OUROBOROS_DIR, "experiments", "runs", `attempt-${att}.log`);
-		const { combined: attemptOut } = await runEvaluatorCommand(evalCmd, workDir, evalTimeout);
+		const { code: attemptCode, combined: attemptOut } = await runEvaluatorCommand(
+			evalCmd,
+			workDir,
+			evalTimeout,
+		);
 		writeFileSync(attemptLog, attemptOut, "utf-8");
-		const parsed = parseEvalOutput(attemptOut);
+		const parsed = successfulEvaluation(attemptCode, attemptOut);
 		if (!parsed) {
 			logWarn("Could not parse evaluator output; reverting.");
 			await git.raw(["reset", "--hard", bestCommit]);
