@@ -2,6 +2,13 @@ import { Octokit } from "@octokit/rest";
 import type { Task, TaskSource } from "./types.ts";
 
 /**
+ * The GitHub issues API also returns pull requests. Keep only real issues.
+ */
+export function onlyIssues<T extends { pull_request?: unknown }>(items: T[]): T[] {
+	return items.filter((item) => !item.pull_request);
+}
+
+/**
  * GitHub Issues task source - reads tasks from GitHub issues
  */
 export class GitHubTaskSource implements TaskSource {
@@ -28,14 +35,19 @@ export class GitHubTaskSource implements TaskSource {
 		});
 	}
 
-	async getAllTasks(): Promise<Task[]> {
-		const issues = await this.octokit.paginate(this.octokit.issues.listForRepo, {
+	private async listIssues(state: "open" | "closed") {
+		const items = await this.octokit.paginate(this.octokit.issues.listForRepo, {
 			owner: this.owner,
 			repo: this.repo,
-			state: "open",
+			state,
 			labels: this.label,
 			per_page: 100,
 		});
+		return onlyIssues(items);
+	}
+
+	async getAllTasks(): Promise<Task[]> {
+		const issues = await this.listIssues("open");
 
 		return issues.map((issue) => ({
 			id: `${issue.number}:${issue.title}`,
@@ -67,27 +79,11 @@ export class GitHubTaskSource implements TaskSource {
 	}
 
 	async countRemaining(): Promise<number> {
-		const issues = await this.octokit.paginate(this.octokit.issues.listForRepo, {
-			owner: this.owner,
-			repo: this.repo,
-			state: "open",
-			labels: this.label,
-			per_page: 100,
-		});
-
-		return issues.length;
+		return (await this.listIssues("open")).length;
 	}
 
 	async countCompleted(): Promise<number> {
-		const issues = await this.octokit.paginate(this.octokit.issues.listForRepo, {
-			owner: this.owner,
-			repo: this.repo,
-			state: "closed",
-			labels: this.label,
-			per_page: 100,
-		});
-
-		return issues.length;
+		return (await this.listIssues("closed")).length;
 	}
 
 	/**
