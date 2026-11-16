@@ -1,261 +1,432 @@
 # Ouroboros
 
+<div align="center">
+
 ![Ouroboros](assets/ouroboros.png)
 
-```text
- ██████╗ ██╗   ██╗██████╗  ██████╗ ██████╗  ██████╗ ██████╗  ██████╗ ███████╗
-██╔═══██╗██║   ██║██╔══██╗██╔═══██╗██╔══██╗██╔═══██╗██╔══██╗██╔═══██╗██╔════╝
-██║   ██║██║   ██║██████╔╝██║   ██║██████╔╝██║   ██║██████╔╝██║   ██║███████╗
-██║   ██║██║   ██║██╔══██╗██║   ██║██╔══██╗██║   ██║██╔══██╗██║   ██║╚════██║
-╚██████╔╝╚██████╔╝██║  ██║╚██████╔╝██████╔╝╚██████╔╝██║  ██║╚██████╔╝███████║
- ╚═════╝  ╚═════╝ ╚═╝  ╚═╝ ╚═════╝ ╚═════╝  ╚═════╝ ╚═╝  ╚═╝ ╚═════╝ ╚══════╝
- ```
+![Made by Joe](https://img.shields.io/badge/Made%20by-Joe-red?style=for-the-badge)
+![Agentic Coding](https://img.shields.io/badge/Agentic-Coding-orange?style=for-the-badge)
+![OpenCode First](https://img.shields.io/badge/OpenCode-First-blue?style=for-the-badge)
+![Bun](https://img.shields.io/badge/Runtime-Bun-000000?style=for-the-badge&logo=bun&logoColor=white)
 
-[![Stars](https://img.shields.io/github/stars/fromtheroot/ouroboros?style=flat-square)](https://github.com/fromtheroot/ouroboros/stargazers)
-[![Issues](https://img.shields.io/github/issues/fromtheroot/ouroboros?style=flat-square)](https://github.com/fromtheroot/ouroboros/issues)
-[![License](https://img.shields.io/github/license/fromtheroot/ouroboros?style=flat-square)](https://github.com/fromtheroot/ouroboros/blob/main/LICENSE)
-[![Last Commit](https://img.shields.io/github/last-commit/fromtheroot/ouroboros?style=flat-square)](https://github.com/fromtheroot/ouroboros/commits/main)
-[![OpenCode](https://img.shields.io/badge/OpenCode-enabled-0b5fff?style=flat-square)](https://opencode.ai)
-
-Ouroboros is an agentic coding loop built for OpenCode. Feed it tasks, and it keeps running until the work is done.
-
-## What It Does
-
-- Runs tasks inside your existing git repo using your installed AI CLI (OpenCode by default).
-- Iterates on each task: implement changes, run checks, commit (unless `--no-commit`), and update progress.
-- Works in single-task mode or loops a PRD until everything is complete.
-
-## Quick Start
-
-```bash
-git clone https://github.com/fromtheroot/ouroboros.git
-cd ouroboros
-chmod +x ouroboros.sh
-
-# Single task
-./ouroboros.sh "add login button"
-
-# Or use a task list
-./ouroboros.sh --prd PRD.md
-```
-
-## How It Works
-
-- **Single task mode** runs one focused change inside your current repo.
-- **PRD mode** loops through a task list until it is complete.
-- **OpenCode-first** defaults to OpenCode for execution; other engines are available.
-- **Git-required** expects a git repo so it can commit and track progress.
-- **Experiment mode** runs an [autoresearch](https://github.com/karpathy/autoresearch)-style loop: baseline evaluator → one hypothesis + one commit per attempt → evaluator → keep or discard.
-
-## Two Modes
-
-**Single task**
-```bash
-./ouroboros.sh "add dark mode"
-./ouroboros.sh "fix the auth bug"
-```
-
-**Task list**
-```bash
-./ouroboros.sh              # uses PRD.md
-./ouroboros.sh --prd tasks.md
-```
-
-## Project Config
-
-Optional rules and project context that are injected into every task.
-
-```bash
-./ouroboros.sh --init              # auto-detects project settings
-./ouroboros.sh --config            # view config
-./ouroboros.sh --add-rule "use TypeScript strict mode"
-```
-
-Creates `.ouroboros/config.yaml`:
-```yaml
-project:
-  name: "my-app"
-  language: "TypeScript"
-  framework: "Next.js"
-
-commands:
-  test: "npm test"
-  lint: "npm run lint"
-  build: "npm run build"
-
-rules:
-  - "use server actions not API routes"
-  - "follow error pattern in src/utils/errors.ts"
-
-boundaries:
-  never_touch:
-    - "src/legacy/**"
-    - "*.lock"
-```
-
-Rules apply to all tasks (single or PRD).
-
-## Experiment mode (autoresearch-style)
-
-Metric-driven improvement with a frozen evaluator script. Copy the example config and program, then run:
-
-```bash
-mkdir -p .ouroboros/programs
-cp examples/autoresearch/experiment.yaml .ouroboros/experiment.yaml
-cp examples/autoresearch/programs/autoresearch.md .ouroboros/programs/autoresearch.md
-chmod +x scripts/eval.sh
-# Edit .ouroboros/experiment.yaml — set evaluator.command, allowed_paths, forbidden_paths, program_file
-./ouroboros.sh --experiment
-```
-
-- **`scripts/eval.sh`** — generic harness: runs `commands.test`, `commands.lint`, and `commands.build` from `.ouroboros/config.yaml` and prints `OUROBOROS_EVAL_*` lines (lower `PRIMARY` = fewer failed steps).
-- **`scripts/eval-ouroboros.sh`** — preset for this repo (read-only Biome, Bun tests/build, and Bash syntax). Point `evaluator.command` at it for self-host experiments.
-- Each run writes **`.ouroboros/experiments/runs/<run-id>/`** with a manifest, results ledger, and evaluator logs.
-
-Both entrypoints use the same Bun experiment runner. Install dependencies with `(cd cli && bun install)`, then run `bun cli/src/index.ts --experiment` or `./ouroboros.sh --experiment` from the repository root. `--dry-run` renders the protocol without changing branches or evaluating. Real runs require a clean worktree; evaluator failures and boundary violations cannot be retained. The wall budget is checked between phases; it does not interrupt a running agent.
-
-## AI Engines
-
-```bash
-./ouroboros.sh              # OpenCode (default)
-./ouroboros.sh --opencode   # OpenCode (explicit)
-./ouroboros.sh --cursor     # Cursor
-./ouroboros.sh --codex      # Codex
-./ouroboros.sh --qwen       # Qwen-Code
-./ouroboros.sh --droid      # Factory Droid
-./ouroboros.sh --claude     # Claude Code
-```
-
-## Task Sources
-
-**Markdown** (default):
-```bash
-./ouroboros.sh --prd PRD.md
-```
-```markdown
-## Tasks
-- [ ] create auth
-- [ ] add dashboard
-- [x] done task (skipped)
-```
-
-**YAML**:
-```bash
-./ouroboros.sh --yaml tasks.yaml
-```
-```yaml
-tasks:
-  - title: create auth
-    completed: false
-  - title: add dashboard
-    completed: false
-```
-
-**GitHub Issues**:
-```bash
-./ouroboros.sh --github owner/repo
-./ouroboros.sh --github owner/repo --github-label "ready"
-```
-
-## Parallel Execution
-
-```bash
-./ouroboros.sh --parallel                  # 3 agents default
-./ouroboros.sh --parallel --max-parallel 5 # 5 agents
-```
-
-Each agent gets isolated worktree + branch:
-```
-Agent 1 → /tmp/xxx/agent-1 → ouroboros/agent-1-create-auth
-Agent 2 → /tmp/xxx/agent-2 → ouroboros/agent-2-add-dashboard
-Agent 3 → /tmp/xxx/agent-3 → ouroboros/agent-3-build-api
-```
-
-Without `--create-pr`: auto-merges back, AI resolves conflicts.
-With `--create-pr`: keeps branches, creates PRs.
-
-**YAML parallel groups** - control execution order:
-```yaml
-tasks:
-  - title: Create User model
-    parallel_group: 1
-  - title: Create Post model
-    parallel_group: 1  # same group = runs together
-  - title: Add relationships
-    parallel_group: 2  # runs after group 1
-```
-
-## Branch Workflow
-
-```bash
-./ouroboros.sh --branch-per-task                # branch per task
-./ouroboros.sh --branch-per-task --create-pr    # + create PRs
-./ouroboros.sh --branch-per-task --draft-pr     # + draft PRs
-./ouroboros.sh --base-branch main               # branch from main
-```
-
-Branch naming: `ouroboros/<task-slug>`
-
-## Options
-
-| Flag | What it does |
-|------|--------------|
-| `--prd FILE` | task file (default: PRD.md) |
-| `--yaml FILE` | YAML task file |
-| `--github REPO` | use GitHub issues |
-| `--github-label TAG` | filter issues by label |
-| `--parallel` | run parallel |
-| `--max-parallel N` | max agents (default: 3) |
-| `--branch-per-task` | branch per task |
-| `--base-branch NAME` | base branch |
-| `--create-pr` | create PRs |
-| `--draft-pr` | draft PRs |
-| `--no-tests` | skip tests |
-| `--no-lint` | skip lint |
-| `--fast` | skip tests + lint |
-| `--no-commit` | don't auto-commit |
-| `--max-iterations N` | stop after N tasks |
-| `--max-retries N` | retries per task (default: 3) |
-| `--retry-delay N` | seconds between retries |
-| `--dry-run` | preview only |
-| `-v, --verbose` | debug output |
-| `--init` | setup .ouroboros/ config |
-| `--config` | show config |
-| `--add-rule "rule"` | add rule to config |
-
-## Requirements
-
-**Required:**
-- AI CLI: [OpenCode](https://opencode.ai/docs/) (primary), [Claude Code](https://github.com/anthropics/claude-code), [Cursor](https://cursor.com), Codex, Qwen-Code, or [Factory Droid](https://docs.factory.ai/cli/getting-started/quickstart)
-- `jq`
-
-**Optional:**
-- `yq` - for YAML tasks
-- `gh` - for GitHub issues / `--create-pr`
-- `bc` - for cost calc
-
-## Engine Details
-
-| Engine | CLI | Permissions | Output |
-|--------|-----|-------------|--------|
-| OpenCode | `opencode` | `full-auto` | tokens + cost |
-| Claude | `claude` | `--dangerously-skip-permissions` | tokens + cost |
-| Codex | `codex` | N/A | tokens |
-| Cursor | `agent` | `--force` | duration |
-| Qwen | `qwen` | `--approval-mode yolo` | tokens |
-| Droid | `droid exec` | `--auto medium` | duration |
+[![Quality](https://github.com/joeconstanti/ouroboros/actions/workflows/quality.yml/badge.svg)](https://github.com/joeconstanti/ouroboros/actions/workflows/quality.yml)
+[![License](https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge)](#license)
 
 ---
 
-## Changelog
+**An agentic coding loop for your existing Git repositories. Run one task, work through a PRD, or improve a metric with an autoresearch-style experiment.**
 
-### v1.0.0
-- initial release
+[Commands](#commands) • [Quick Start](#quick-start) • [Agent Support](#agent-support) • [Report Bug](https://github.com/joeconstanti/ouroboros/issues)
 
-## Credits
+</div>
 
-Inspired by the original Ralphy project: https://github.com/michaelshimeles/ralphy
+## Features
+
+<div align="center">
+
+| Feature | What it does |
+|---------|--------------|
+| **Single tasks and PRDs** | Runs a focused change or works through a Markdown, YAML or GitHub Issues task list |
+| **Six agent integrations** | Uses OpenCode by default, with Claude Code, Codex, Cursor, Qwen-Code and Factory Droid options |
+| **Project context** | Includes configured rules, commands and file boundaries in task prompts |
+| **Parallel execution** | Runs independent tasks in separate Git worktrees and branches |
+| **Branch and PR workflows** | Creates task branches and optionally opens pull requests |
+| **Metric-driven experiments** | Evaluates a baseline, tests one committed hypothesis, and keeps or discards the candidate |
+| **Experiment safeguards** | Checks path boundaries, evaluator success and finite metrics; restores rejected attempts |
+| **Reproducible evidence** | Saves experiment manifests, evaluator logs, candidate commits and hypotheses per run |
+| **Shared project skills** | Discovers focused research, debugging and skill-evaluation instructions on demand |
+
+</div>
+
+## Commands
+
+Run these from the repository you want Ouroboros to work on. Use the absolute path
+to `ouroboros.sh` when the checkout lives elsewhere.
+
+| Command | Outcome | Side effects |
+|---------|---------|--------------|
+| `./ouroboros.sh "add dark mode"` | Implements one task | Source edits and a commit by default |
+| `./ouroboros.sh --prd PRD.md` | Works through unfinished tasks | Source edits, commits and task progress |
+| `./ouroboros.sh --yaml tasks.yaml` | Uses a YAML task list | Same task workflow; supports parallel groups |
+| `./ouroboros.sh --github owner/repo` | Uses GitHub Issues as tasks | Reads the selected repository and runs its tasks |
+| `./ouroboros.sh --init` | Detects project settings | Creates `.ouroboros/` configuration |
+| `./ouroboros.sh --config` | Displays project configuration | Read-only output |
+| `./ouroboros.sh --add-rule "use strict TypeScript"` | Adds a project rule | Updates project configuration |
+| `./ouroboros.sh --parallel` | Runs independent tasks concurrently | Creates worktrees and branches; merges results unless PR mode is enabled |
+| `./ouroboros.sh --branch-per-task --create-pr` | Opens task pull requests | Publishes branches and PRs; requires GitHub CLI access |
+| `./ouroboros.sh --experiment` | Runs bounded metric optimization | Creates an experiment branch, evaluates candidates and restores rejected changes |
+| `./ouroboros.sh --experiment --dry-run` | Displays the experiment protocol | No branch changes, agent execution or evaluation |
+
+Ordinary task boundaries are instructions in the agent prompt. Experiment mode
+also checks candidate file changes against configured allowlists and forbidden
+paths before evaluation. Agent CLIs run with the automation settings defined by
+each integration; review the scope of a task before starting it.
+
+## Technologies Used
+
+<div align="center">
+
+![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white)
+![Bun](https://img.shields.io/badge/Bun-000000?style=flat-square&logo=bun&logoColor=white)
+![Bash](https://img.shields.io/badge/Bash-4EAA25?style=flat-square&logo=gnubash&logoColor=white)
+![Git](https://img.shields.io/badge/Git-F05032?style=flat-square&logo=git&logoColor=white)
+
+</div>
+
+| Technology | Purpose |
+|------------|---------|
+| **TypeScript + Bun** | CLI, agent integrations, experiment orchestration and regression tests |
+| **Bash** | Shell entrypoint and task workflows; experiment mode delegates to the Bun runner |
+| **Commander** | CLI argument parsing |
+| **Zod + YAML** | Configuration validation and parsing |
+| **simple-git** | CLI branch, worktree and repository operations |
+| **Biome** | TypeScript formatting and linting |
+| **Markdown + SKILL.md** | Shared project instructions with metadata-only prompt discovery |
+
+## Project Structure
+
+```text
+ouroboros/
+├── ouroboros.sh              # Shell entrypoint
+├── cli/
+│   ├── src/
+│   │   ├── cli/              # Arguments and commands
+│   │   ├── config/           # Configuration schemas, loaders and skill catalog
+│   │   ├── engines/          # Six agent CLI integrations
+│   │   ├── execution/        # Task runners and experiment lifecycle
+│   │   ├── git/              # Branch, worktree and PR helpers
+│   │   ├── tasks/            # Markdown, YAML and GitHub task sources
+│   │   └── ui/               # Logging and notifications
+│   └── package.json          # Build, lint and test commands
+├── .agents/skills/           # Canonical project skills
+├── .claude/skills            # Link to shared skills
+├── .cursor/skills            # Link to shared skills
+├── .opencode/skills          # Link to shared skills
+├── examples/autoresearch/    # Experiment configuration and protocol
+├── scripts/                 # Generic and self-host evaluators
+└── .github/workflows/        # macOS and Linux quality checks
+```
+
+Runtime configuration and progress live in `.ouroboros/` inside the target
+repository. Experiment artifacts are local and should be ignored by Git.
+
+## Local Development
+
+### Quick Start
+
+Clone Ouroboros beside your projects and install the CLI dependencies:
+
+```sh
+git clone https://github.com/joeconstanti/ouroboros.git
+cd ouroboros
+(cd cli && bun install)
+./ouroboros.sh --help
+```
+
+Then run a task from the target Git repository:
+
+```sh
+cd /absolute/path/to/your-project
+/absolute/path/to/ouroboros/ouroboros.sh --init
+/absolute/path/to/ouroboros/ouroboros.sh "add a dark mode toggle"
+```
+
+OpenCode is the default engine. Add `--claude`, `--codex`, `--cursor`, `--qwen` or
+`--droid` to select another installed, authenticated agent CLI.
+
+The TypeScript entrypoint can also run from the target repository:
+
+```sh
+bun /absolute/path/to/ouroboros/cli/src/index.ts "add a dark mode toggle"
+```
+
+### Requirements
+
+| Requirement | When needed |
+|-------------|-------------|
+| **Git** | Repository state, commits, branches and worktrees |
+| **Installed and authenticated agent CLI** | Executing coding tasks and experiments |
+| **Bash + jq** | Shell task workflows |
+| **Bun + CLI dependencies** | TypeScript CLI and both experiment entrypoints |
+| **mikefarah/yq** | Shell YAML task sources and the generic evaluator |
+| **GitHub CLI (`gh`)** | Shell GitHub Issues and PR workflows |
+| **bc** | Optional shell cost calculations |
+
+The CLI package declares Node.js 18+ compatibility; running its TypeScript source
+and the documented development commands requires Bun.
+
+### Agent Support
+
+| Agent | Selection flag | Executable |
+|-------|----------------|------------|
+| **OpenCode** | `--opencode` (default) | `opencode` |
+| **Claude Code** | `--claude` | `claude` |
+| **Codex** | `--codex` | `codex` |
+| **Cursor** | `--cursor` | `agent` |
+| **Qwen-Code** | `--qwen` | `qwen` |
+| **Factory Droid** | `--droid` | `droid` |
+
+These integrations call your installed tools. Output, token accounting and
+permission behavior depend on the integration and agent version.
+
+### Quality Checks
+
+Run from `cli/`:
+
+```sh
+bun run check       # Format and lint; writes fixes
+bun run check:ci    # Read-only format and lint check
+bun test
+bun run build
+bun run dev --help
+```
+
+Run one regression file with `bun test src/execution/evaluation.test.ts`.
+Use `bun run build:all` to compile all configured platform binaries. From the
+repository root, check shell syntax with:
+
+```sh
+bash -n ouroboros.sh scripts/eval.sh scripts/eval-ouroboros.sh
+```
+
+CI runs the regression suite, read-only lint, build, CLI help and shell syntax on
+macOS and Linux. Deterministic fake-agent tests verify orchestration; they do not
+establish real-model quality gains or every agent's native discovery behavior.
+
+## Task Workflows
+
+### Task Sources
+
+Markdown tasks use checkboxes; completed tasks are skipped:
+
+```markdown
+## Tasks
+- [ ] Create authentication
+- [ ] Add a dashboard
+- [x] Set up the project
+```
+
+```sh
+./ouroboros.sh --prd PRD.md
+```
+
+YAML tasks can group independent work:
+
+```yaml
+tasks:
+  - title: Create User model
+    completed: false
+    parallel_group: 1
+  - title: Create Post model
+    completed: false
+    parallel_group: 1
+  - title: Add relationships
+    completed: false
+    parallel_group: 2
+```
+
+```sh
+./ouroboros.sh --yaml tasks.yaml --parallel
+./ouroboros.sh --github owner/repo --github-label ready
+```
+
+### Branches and Parallel Work
+
+```sh
+./ouroboros.sh --parallel --max-parallel 3
+./ouroboros.sh --branch-per-task --create-pr
+./ouroboros.sh --branch-per-task --create-pr --draft-pr
+./ouroboros.sh --base-branch main
+```
+
+Parallel agents receive separate worktrees and branches. Without `--create-pr`,
+results are merged back and the workflow can ask an agent to resolve conflicts.
+With `--create-pr`, branches are retained for pull requests. Task branches use
+`ouroboros/<task-slug>` names.
+
+## Experiment Workflow
+
+Inspired by [Karpathy's autoresearch](https://github.com/karpathy/autoresearch),
+experiment mode establishes a baseline, asks for one hypothesis and one commit,
+then evaluates the candidate and keeps or discards it.
+
+From the Ouroboros repository root:
+
+```sh
+mkdir -p .ouroboros/programs
+cp examples/autoresearch/experiment.yaml .ouroboros/experiment.yaml
+cp examples/autoresearch/programs/autoresearch.md .ouroboros/programs/autoresearch.md
+```
+
+Edit the experiment configuration to choose the evaluator, metric direction,
+minimum improvement, attempt/time budgets, editable paths and frozen paths.
+For another target repository, copy the examples and required evaluator there
+and adjust paths to that repository.
+
+```sh
+./ouroboros.sh --experiment --dry-run
+./ouroboros.sh --experiment
+# Equivalent source entrypoint from the Ouroboros root:
+bun cli/src/index.ts --experiment
+```
+
+Real runs require a clean working tree, commits enabled, and
+`.ouroboros/experiments/` ignored by Git. The runner rejects failed evaluator
+processes, unsuccessful quality status, malformed metrics, boundary violations
+and uncommitted candidates. It restores rejected attempt changes to the best
+commit and stops if the agent switches branches or changes frozen configuration.
+
+| Evaluator | Purpose |
+|-----------|---------|
+| [`scripts/eval.sh`](scripts/eval.sh) | Runs configured test/lint/build commands; fails if configuration, YAML tooling or runnable checks are missing |
+| [`scripts/eval-ouroboros.sh`](scripts/eval-ouroboros.sh) | Checks Ouroboros with read-only Biome, Bun tests/build and Bash syntax |
+
+Evaluators emit `OUROBOROS_EVAL_STATUS`, `OUROBOROS_EVAL_PRIMARY` and optionally
+`OUROBOROS_EVAL_DURATION_MS`. A usable score requires exit code zero, status `ok`
+and a finite numeric primary metric. Freeze the evaluator and its fixtures in
+`forbidden_paths`; use a narrow `allowed_paths` list.
+
+Each run saves `.ouroboros/experiments/runs/<run-id>/` with `manifest.json`,
+`results.tsv`, a baseline log and candidate evaluator logs. The ledger records
+candidate commits and hypotheses even when their changes are discarded.
+
+Evaluator timeouts terminate process groups on POSIX; Windows currently terminates
+the direct child only. The wall budget is checked between attempts and does not
+interrupt a running agent. Repeat matched baseline/candidate measurements before
+claiming gains on noisy metrics.
+
+## Customization
+
+Initialize or inspect project configuration:
+
+```sh
+./ouroboros.sh --init
+./ouroboros.sh --config
+./ouroboros.sh --add-rule "use TypeScript strict mode"
+```
+
+`.ouroboros/config.yaml` supplies project context for single tasks and PRD runs:
+
+```yaml
+project:
+  name: my-app
+  language: TypeScript
+  framework: Next.js
+
+commands:
+  test: npm test
+  lint: npm run lint
+  build: npm run build
+
+rules:
+  - use server actions rather than API routes
+  - follow the error pattern in src/utils/errors.ts
+
+boundaries:
+  never_touch:
+    - src/legacy/**
+    - '*.lock'
+```
+
+### Project Skills
+
+Canonical instructions live in `.agents/skills/`, with shared discovery links for
+Claude Code, Cursor and OpenCode. Codex can discover the canonical directory.
+Task and experiment prompts include only skill names, descriptions and paths;
+matching skill bodies are read when relevant.
+
+| Skill | Use it for |
+|-------|------------|
+| [`autoresearch`](.agents/skills/autoresearch/SKILL.md) | Experiment setup, frozen evaluators and trustworthy metric optimization |
+| [`evidence-debugging`](.agents/skills/evidence-debugging/SKILL.md) | Reproducing agent/evaluator failures and verifying root-cause fixes |
+| [`skill-evaluation`](.agents/skills/skill-evaluation/SKILL.md) | Matched tasks and held-out checks before promoting skill changes |
+
+These are original project-specific instructions informed by the sources below.
+Their packaging and prompt discovery are tested; real-agent efficacy remains to
+be measured with paired evaluations.
+
+### Runtime Options
+
+| Flag | What it does |
+|------|--------------|
+| `--prd FILE` | Markdown task file; defaults to `PRD.md` |
+| `--yaml FILE` | YAML task file |
+| `--github REPO` | GitHub Issues task source |
+| `--github-label TAG` | Filters GitHub Issues |
+| `--parallel` | Runs independent tasks in worktrees |
+| `--max-parallel N` | Maximum parallel agents; defaults to 3 |
+| `--branch-per-task` | Creates a branch for each task |
+| `--base-branch NAME` | Selects the base branch |
+| `--create-pr` | Creates pull requests |
+| `--draft-pr` | Marks created PRs as drafts; combine with `--create-pr` |
+| `--no-tests` | Skips task tests |
+| `--no-lint` | Skips task lint |
+| `--fast` | Skips task tests and lint |
+| `--no-commit` | Disables ordinary task commits; incompatible with experiment mode |
+| `--max-iterations N` | Limits task iterations; 0 means unlimited |
+| `--max-retries N` | Configures retries; defaults to 3 |
+| `--retry-delay N` | Delay between retries in seconds; defaults to 5 |
+| `--experiment`, `--autoresearch` | Runs metric-driven experiments |
+| `--experiment-file FILE` | Alternate experiment configuration |
+| `--dry-run` | Previews execution; experiment previews are read-only |
+| `-v, --verbose` | Enables debug output |
+| `-h, --help` | Lists commands and options |
+
+## Contributing
+
+<div align="center">
+
+![Contributions Welcome](https://img.shields.io/badge/Contributions-Welcome-brightgreen?style=for-the-badge)
+[![Issues](https://img.shields.io/badge/Issues-Welcome-red?style=for-the-badge)](https://github.com/joeconstanti/ouroboros/issues)
+
+</div>
+
+| Step | Action |
+|------|--------|
+| **Branch** | Use a descriptive branch such as `fix/evaluator-timeout` |
+| **Change** | Keep agent behavior focused and preserve unrelated work |
+| **Validate** | Run the relevant tests, lint, build and CLI checks listed above |
+| **PR** | Describe the resulting behavior and provide actual validation |
+
+Useful contributions include engine compatibility fixes, reliable experiment
+acceptance, focused skills and reproducible evaluation cases. See
+[AGENTS.md](AGENTS.md) for repository conventions.
+
+## Acknowledgments
+
+<div align="center">
+
+![Autoresearch](https://img.shields.io/badge/Inspired%20By-Autoresearch-purple?style=flat-square)
+![Agent Skills](https://img.shields.io/badge/Built%20With-Agent%20Skills-blue?style=flat-square)
+
+</div>
+
+- [Ralphy](https://github.com/michaelshimeles/ralphy): inspiration for the original coding loop.
+- [Karpathy autoresearch](https://github.com/karpathy/autoresearch): hypothesis, evaluation and keep/discard workflow.
+- [Superpowers](https://github.com/obra/superpowers): research reference for systematic debugging and evidence before completion.
+- [SkillsBench](https://arxiv.org/abs/2602.12670): paired evaluation of skill effectiveness.
+- [Agent Skills](https://agentskills.io/specification): portable skill packaging and progressive disclosure.
+- [jstack](https://github.com/joeconstanti/jstack): README structure and presentation reference.
 
 ## License
 
-MIT
+<div align="center">
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](#license)
+[![Open Source](https://img.shields.io/badge/Open%20Source-Yes-green?style=for-the-badge)](https://github.com/joeconstanti/ouroboros)
+
+</div>
+
+The CLI package declares the MIT license.
+
+---
+
+<div align="center">
+
+[![GitHub stars](https://img.shields.io/github/stars/joeconstanti/ouroboros?style=social)](https://github.com/joeconstanti/ouroboros/stargazers)
+
+**Made by [Joe](https://madebyjoe.co)**
+
+[GitHub](https://github.com/joeconstanti/ouroboros) • [Report Bug](https://github.com/joeconstanti/ouroboros/issues)
+
+</div>
