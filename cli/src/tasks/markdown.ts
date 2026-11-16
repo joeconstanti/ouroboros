@@ -1,6 +1,9 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import type { Task, TaskSource } from "./types.ts";
 
+const OPEN_TASK = /^\s*[-*+] \[ \] (.+)$/;
+const OPEN_MARK = /^(\s*[-*+] )\[ \] /;
+
 /**
  * Markdown task source - reads tasks from markdown files with checkbox format
  * Format: "- [ ] Task description" (incomplete) or "- [x] Task description" (complete)
@@ -22,7 +25,7 @@ export class MarkdownTaskSource implements TaskSource {
 			const line = lines[i];
 
 			// Match incomplete tasks
-			const incompleteMatch = line.match(/^- \[ \] (.+)$/);
+			const incompleteMatch = line.match(OPEN_TASK);
 			if (incompleteMatch) {
 				tasks.push({
 					id: String(i + 1), // Line number as ID
@@ -47,20 +50,20 @@ export class MarkdownTaskSource implements TaskSource {
 
 		if (lineNumber >= 0 && lineNumber < lines.length) {
 			// Replace "- [ ]" with "- [x]"
-			lines[lineNumber] = lines[lineNumber].replace(/^- \[ \] /, "- [x] ");
+			lines[lineNumber] = lines[lineNumber].replace(OPEN_MARK, "$1[x] ");
 			writeFileSync(this.filePath, lines.join("\n"), "utf-8");
 		}
 	}
 
 	async countRemaining(): Promise<number> {
 		const content = readFileSync(this.filePath, "utf-8");
-		const matches = content.match(/^- \[ \] /gm);
+		const matches = content.match(/^\s*[-*+] \[ \] /gm);
 		return matches?.length || 0;
 	}
 
 	async countCompleted(): Promise<number> {
 		const content = readFileSync(this.filePath, "utf-8");
-		const matches = content.match(/^- \[x\] /gim);
+		const matches = content.match(/^\s*[-*+] \[x\] /gim);
 		return matches?.length || 0;
 	}
 }
