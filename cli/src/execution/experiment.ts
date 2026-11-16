@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import simpleGit from "simple-git";
 import { loadExperimentConfig } from "../config/experiment-loader.ts";
 import { loadBoundaries } from "../config/loader.ts";
@@ -88,6 +88,23 @@ export async function runExperimentLoop(options: RuntimeOptions): Promise<void> 
 	if (!(await isEngineAvailable(options.aiEngine as AIEngineName))) {
 		throw new Error(`${engine.name} CLI not found.`);
 	}
+	const frozenBoundaries = loadBoundaries(workDir);
+	const frozenFiles = [options.experimentFile, exp.program_file, ".ouroboros/config.yaml"].map(
+		(path) => resolve(workDir, path),
+	);
+	const frozenContents = frozenFiles.map((path) =>
+		existsSync(path) ? readFileSync(path, "utf-8") : null,
+	);
+	const assertFrozen = (): void => {
+		if (
+			frozenFiles.some(
+				(path, i) => (existsSync(path) ? readFileSync(path, "utf-8") : null) !== frozenContents[i],
+			)
+		)
+			throw new Error(
+				"Experiment configuration or protocol changed; stopping. Restore the frozen harness before resuming.",
+			);
+	};
 	const baseBranch = options.baseBranch || exp.base_branch || (await git.branch()).current;
 	if (!baseBranch) throw new Error("Detached HEAD: specify --base-branch.");
 	await git.checkout(baseBranch);
@@ -202,6 +219,7 @@ export async function runExperimentLoop(options: RuntimeOptions): Promise<void> 
 			continue;
 		}
 
+		assertFrozen();
 		attemptedCommit = (await git.revparse("HEAD")).trim();
 		if (!aiResult?.success) {
 			await restoreAttempt(git, expBranch, bestCommit);
@@ -231,7 +249,7 @@ export async function runExperimentLoop(options: RuntimeOptions): Promise<void> 
 			.filter(Boolean);
 		const violations = boundaryViolations(changedPaths, exp.allowed_paths, [
 			...exp.forbidden_paths,
-			...loadBoundaries(workDir),
+			...frozenBoundaries,
 			options.experimentFile,
 			exp.program_file,
 		]);
@@ -250,11 +268,13 @@ export async function runExperimentLoop(options: RuntimeOptions): Promise<void> 
 			evalTimeout,
 		);
 		writeFileSync(attemptLog, attemptOut, "utf-8");
+		assertFrozen();
 		const parsed = successfulEvaluation(attemptCode, attemptOut);
 		if (
 			!parsed ||
 			!(await git.status()).isClean() ||
-			(await git.revparse("HEAD")).trim() !== candidateCommit
+			(await git.revparse("HEAD")).trim() !== candidateCommit ||
+			(await git.branch()).current !== expBranch
 		) {
 			logWarn("Could not parse evaluator output; reverting.");
 			await restoreAttempt(git, expBranch, bestCommit);

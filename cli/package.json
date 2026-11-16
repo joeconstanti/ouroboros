@@ -18,6 +18,8 @@
 		"build:windows-x64": "bun build src/index.ts --compile --minify --target=bun-windows-x64 --outfile dist/ouroboros-windows-x64.exe",
 		"build:all": "bun run build:darwin-arm64 && bun run build:darwin-x64 && bun run build:linux-x64 && bun run build:linux-arm64 && bun run build:windows-x64",
 		"check": "biome check --write .",
+		"check:ci": "biome check .",
+		"test": "bun test",
 		"prepublishOnly": "bun run build:all"
 	},
 	"keywords": [

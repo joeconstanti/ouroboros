@@ -109,10 +109,10 @@ chmod +x scripts/eval.sh
 ```
 
 - **`scripts/eval.sh`** — generic harness: runs `commands.test`, `commands.lint`, and `commands.build` from `.ouroboros/config.yaml` and prints `OUROBOROS_EVAL_*` lines (lower `PRIMARY` = fewer failed steps).
-- **`scripts/eval-ouroboros.sh`** — preset for this repo (`bun run check` in `cli/`, `bash -n` on `ouroboros.sh`). Point `evaluator.command` at it for self-host experiments.
-- Results append to **`.ouroboros/experiments/results.tsv`** (and per-run logs under `.ouroboros/experiments/runs/`).
+- **`scripts/eval-ouroboros.sh`** — preset for this repo (read-only Biome, Bun tests/build, and Bash syntax). Point `evaluator.command` at it for self-host experiments.
+- Each run writes **`.ouroboros/experiments/runs/<run-id>/`** with a manifest, results ledger, and evaluator logs.
 
-The Bun CLI supports the same flow: `bun run dev -- --experiment` (from `cli/`, with `--experiment-file` if needed).
+Both entrypoints use the same Bun experiment runner. Install dependencies with `(cd cli && bun install)`, then run `bun cli/src/index.ts --experiment` or `./ouroboros.sh --experiment` from the repository root. `--dry-run` renders the protocol without changing branches or evaluating. Real runs require a clean worktree; evaluator failures and boundary violations cannot be retained. The wall budget is checked between phases; it does not interrupt a running agent.
 
 ## AI Engines
 
