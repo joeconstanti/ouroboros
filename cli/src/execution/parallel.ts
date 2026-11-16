@@ -8,6 +8,7 @@ import type { Task, TaskSource } from "../tasks/types.ts";
 import { YamlTaskSource } from "../tasks/yaml.ts";
 import { logDebug, logError, logInfo, logSuccess } from "../ui/logger.ts";
 import { notifyTaskComplete, notifyTaskFailed } from "../ui/notify.ts";
+import { rejectBlankResult, tasksToRun } from "./pending.ts";
 import { buildParallelPrompt } from "./prompt.ts";
 import { isRetryableError, sleep, withRetry } from "./retry.ts";
 import type { ExecutionOptions, ExecutionResult } from "./sequential.ts";
@@ -122,6 +123,7 @@ export async function runParallel(
 
 	// Process tasks in batches
 	let iteration = 0;
+	const skipped = new Set<string>();
 
 	while (true) {
 		// Check iteration limit
@@ -135,22 +137,23 @@ export async function runParallel(
 
 		// For YAML sources, try to get tasks from the same parallel group
 		if (taskSource instanceof YamlTaskSource) {
-			const nextTask = await taskSource.getNextTask();
-			if (!nextTask) break;
-
-			const group = await taskSource.getParallelGroup(nextTask.title);
-			if (group > 0) {
-				tasks = await taskSource.getTasksInGroup(group);
-			} else {
-				tasks = [nextTask];
+			const nextTask = tasksToRun(await taskSource.getAllTasks(), skipped)[0];
+			if (nextTask) {
+				const group = await taskSource.getParallelGroup(nextTask.title);
+				tasks =
+					group > 0 ? tasksToRun(await taskSource.getTasksInGroup(group), skipped) : [nextTask];
 			}
 		} else {
 			// For other sources, get all remaining tasks
-			tasks = await taskSource.getAllTasks();
+			tasks = tasksToRun(await taskSource.getAllTasks(), skipped);
 		}
 
 		if (tasks.length === 0) {
-			logSuccess("All tasks completed!");
+			if (result.tasksFailed > 0) {
+				logInfo(`Stopped after ${result.tasksFailed} failed task(s)`);
+			} else {
+				logSuccess(dryRun ? "Dry run finished" : "All tasks completed!");
+			}
 			break;
 		}
 
@@ -161,6 +164,7 @@ export async function runParallel(
 		logInfo(`Batch ${iteration}: ${batch.length} tasks in parallel`);
 
 		if (dryRun) {
+			for (const task of batch) skipped.add(task.id);
 			logInfo("(dry run) Skipping batch");
 			continue;
 		}
@@ -185,13 +189,16 @@ export async function runParallel(
 
 		// Process results
 		for (const agentResult of results) {
-			const { task, worktreeDir, branchName, result: aiResult, error } = agentResult;
+			const { task, worktreeDir, branchName, error } = agentResult;
+			const aiResult = agentResult.result ? rejectBlankResult(agentResult.result) : null;
 
-			if (error) {
-				logError(`Task "${task.title}" failed: ${error}`);
+			if (error || !aiResult?.success) {
+				skipped.add(task.id);
+				const errMsg = error || aiResult?.error || "Unknown error";
+				logError(`Task "${task.title}" failed: ${errMsg}`);
 				logTaskProgress(task.title, "failed", workDir);
 				result.tasksFailed++;
-				notifyTaskFailed(task.title, error);
+				notifyTaskFailed(task.title, errMsg);
 			} else if (aiResult?.success) {
 				logSuccess(`Task "${task.title}" completed`);
 				result.totalInputTokens += aiResult.inputTokens;
@@ -201,12 +208,6 @@ export async function runParallel(
 				logTaskProgress(task.title, "completed", workDir);
 				result.tasksCompleted++;
 				notifyTaskComplete(task.title);
-			} else {
-				const errMsg = aiResult?.error || "Unknown error";
-				logError(`Task "${task.title}" failed: ${errMsg}`);
-				logTaskProgress(task.title, "failed", workDir);
-				result.tasksFailed++;
-				notifyTaskFailed(task.title, errMsg);
 			}
 
 			// Cleanup worktree

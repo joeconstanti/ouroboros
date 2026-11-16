@@ -3,6 +3,7 @@ import type { RuntimeOptions } from "../../config/types.ts";
 import { logTaskProgress } from "../../config/writer.ts";
 import { createEngine, isEngineAvailable } from "../../engines/index.ts";
 import type { AIEngineName } from "../../engines/types.ts";
+import { rejectBlankResult } from "../../execution/pending.ts";
 import { buildPrompt } from "../../execution/prompt.ts";
 import { isRetryableError, withRetry } from "../../execution/retry.ts";
 import { formatTokens, logError, logInfo, logSuccess, setVerbose } from "../../ui/logger.ts";
@@ -47,24 +48,26 @@ export async function runTask(task: string, options: RuntimeOptions): Promise<vo
 	}
 
 	try {
-		const result = await withRetry(
-			async () => {
-				spinner.updateStep("Working");
-				const res = await engine.execute(prompt, workDir);
+		const result = rejectBlankResult(
+			await withRetry(
+				async () => {
+					spinner.updateStep("Working");
+					const res = await engine.execute(prompt, workDir);
 
-				if (!res.success && res.error && isRetryableError(res.error)) {
-					throw new Error(res.error);
-				}
+					if (!res.success && res.error && isRetryableError(res.error)) {
+						throw new Error(res.error);
+					}
 
-				return res;
-			},
-			{
-				maxRetries: options.maxRetries,
-				retryDelay: options.retryDelay,
-				onRetry: (attempt) => {
-					spinner.updateStep(`Retry ${attempt}`);
+					return res;
 				},
-			},
+				{
+					maxRetries: options.maxRetries,
+					retryDelay: options.retryDelay,
+					onRetry: (attempt) => {
+						spinner.updateStep(`Retry ${attempt}`);
+					},
+				},
+			),
 		);
 
 		if (result.success) {
