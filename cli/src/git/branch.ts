@@ -1,14 +1,21 @@
+import { createHash } from "node:crypto";
 import simpleGit, { type SimpleGit } from "simple-git";
 
 /**
- * Slugify text for branch names
+ * Slugify text for branch names.
+ * Truncation cannot leave a trailing hyphen, and titles with no usable
+ * characters get a stable hash so they do not all share one branch.
  */
 export function slugify(text: string): string {
-	return text
+	const slug = text
 		.toLowerCase()
 		.replace(/[^a-z0-9]+/g, "-")
-		.replace(/^-|-$/g, "")
-		.slice(0, 50);
+		.replace(/^-+|-+$/g, "")
+		.slice(0, 50)
+		.replace(/-+$/g, "");
+	if (slug.length > 0) return slug;
+	const hash = createHash("sha256").update(text).digest("hex").slice(0, 8);
+	return `task-${hash}`;
 }
 
 /**
