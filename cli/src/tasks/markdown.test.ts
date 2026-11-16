@@ -16,3 +16,28 @@ test("reads and completes common checkbox list styles", async () => {
 	expect(readFileSync(file, "utf-8")).toContain("  + [x] nested plus");
 	expect(await source.countRemaining()).toBe(2);
 });
+
+test("ignores checkbox examples inside fenced code", async () => {
+	const file = join(mkdtempSync(join(tmpdir(), "md-tasks-")), "PRD.md");
+	writeFileSync(
+		file,
+		[
+			"# Tasks",
+			"```md",
+			"- [ ] example",
+			"- [x] also an example",
+			"```",
+			"- [ ] real work",
+			"",
+		].join("\n"),
+	);
+	const source = new MarkdownTaskSource(file);
+	const tasks = await source.getAllTasks();
+	expect(tasks.map((task) => task.title)).toEqual(["real work"]);
+	expect(await source.countRemaining()).toBe(1);
+	expect(await source.countCompleted()).toBe(0);
+	await source.markComplete("3");
+	expect(readFileSync(file, "utf-8")).toContain("- [ ] example");
+	await source.markComplete(tasks[0].id);
+	expect(readFileSync(file, "utf-8")).toContain("- [x] real work");
+});
