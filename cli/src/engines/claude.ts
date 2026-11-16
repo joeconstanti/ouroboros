@@ -1,4 +1,10 @@
-import { BaseAIEngine, checkForErrors, execCommand, parseStreamJsonResult } from "./base.ts";
+import {
+	BaseAIEngine,
+	checkForErrors,
+	execCommand,
+	parseStreamJsonResult,
+	resultFromOutput,
+} from "./base.ts";
 import type { AIResult } from "./types.ts";
 
 /**
@@ -38,12 +44,6 @@ export class ClaudeEngine extends BaseAIEngine {
 
 		// Parse result
 		const { response, inputTokens, outputTokens } = parseStreamJsonResult(output);
-
-		return {
-			success: exitCode === 0,
-			response,
-			inputTokens,
-			outputTokens,
-		};
+		return resultFromOutput(exitCode, response, { inputTokens, outputTokens });
 	}
 }

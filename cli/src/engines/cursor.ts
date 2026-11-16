@@ -1,4 +1,4 @@
-import { BaseAIEngine, checkForErrors, execCommand } from "./base.ts";
+import { BaseAIEngine, checkForErrors, execCommand, resultFromOutput } from "./base.ts";
 import type { AIResult } from "./types.ts";
 
 /**
@@ -31,14 +31,9 @@ export class CursorEngine extends BaseAIEngine {
 
 		// Parse Cursor output
 		const { response, durationMs } = this.parseOutput(output);
-
-		return {
-			success: exitCode === 0,
-			response,
-			inputTokens: 0, // Cursor doesn't provide token counts
-			outputTokens: 0,
+		return resultFromOutput(exitCode, response, {
 			cost: durationMs > 0 ? `duration:${durationMs}` : undefined,
-		};
+		});
 	}
 
 	private parseOutput(output: string): { response: string; durationMs: number } {
@@ -52,7 +47,9 @@ export class CursorEngine extends BaseAIEngine {
 
 				// Check result line
 				if (parsed.type === "result") {
-					response = parsed.result || "Task completed";
+					if (typeof parsed.result === "string" && parsed.result.trim().length > 0) {
+						response = parsed.result;
+					}
 					if (typeof parsed.duration_ms === "number") {
 						durationMs = parsed.duration_ms;
 					}
@@ -72,6 +69,6 @@ export class CursorEngine extends BaseAIEngine {
 			}
 		}
 
-		return { response: response || "Task completed", durationMs };
+		return { response, durationMs };
 	}
 }

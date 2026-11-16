@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, rmSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
-import { BaseAIEngine, execCommand } from "./base.ts";
+import { BaseAIEngine, execCommand, resultFromOutput } from "./base.ts";
 import type { AIResult } from "./types.ts";
 
 /**
@@ -49,12 +49,7 @@ export class CodexEngine extends BaseAIEngine {
 				};
 			}
 
-			return {
-				success: exitCode === 0,
-				response: response || "Task completed",
-				inputTokens: 0, // Codex doesn't expose token counts
-				outputTokens: 0,
-			};
+			return resultFromOutput(exitCode, response);
 		} finally {
 			// Ensure cleanup
 			if (existsSync(lastMessageFile)) {
