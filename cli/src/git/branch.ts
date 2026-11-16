@@ -18,8 +18,34 @@ export function slugify(text: string): string {
 	return `task-${hash}`;
 }
 
+const AUTOSTASH_MESSAGE = "ouroboros-autostash";
+
 /**
- * Create a task branch
+ * Pick a branch name that does not already exist locally.
+ */
+export async function uniqueTaskBranchName(git: SimpleGit, task: string): Promise<string> {
+	const base = `ouroboros/${slugify(task)}`;
+	const existing = new Set((await git.branchLocal()).all);
+	if (!existing.has(base)) return base;
+	for (let suffix = 2; suffix < 1000; suffix++) {
+		const name = `${base}-${suffix}`;
+		if (!existing.has(name)) return name;
+	}
+	throw new Error(`No free branch name for ${base}`);
+}
+
+async function restoreAutostash(git: SimpleGit): Promise<void> {
+	const list = await git.stash(["list"]);
+	const top = list.split("\n").find((line) => line.trim().length > 0) ?? "";
+	if (top.includes(AUTOSTASH_MESSAGE)) {
+		await git.stash(["pop"]);
+	}
+}
+
+/**
+ * Create a task branch from the base branch.
+ * Uncommitted work is stashed and left there until returnToBaseBranch.
+ * An existing task branch is never reused.
  */
 export async function createTaskBranch(
 	task: string,
@@ -27,52 +53,43 @@ export async function createTaskBranch(
 	workDir = process.cwd(),
 ): Promise<string> {
 	const git: SimpleGit = simpleGit(workDir);
-	const branchName = `ouroboros/${slugify(task)}`;
-
-	// Stash any changes
-	let stashed = false;
-	const status = await git.status();
-	if (status.files.length > 0) {
-		await git.stash(["push", "-m", "ouroboros-autostash"]);
-		stashed = true;
+	const branchName = await uniqueTaskBranchName(git, task);
+	const dirty = (await git.status()).files.length > 0;
+	if (dirty) {
+		await git.stash(["push", "--include-untracked", "-m", AUTOSTASH_MESSAGE]);
 	}
 
 	try {
-		// Checkout base branch and pull
 		await git.checkout(baseBranch);
 		await git.pull("origin", baseBranch).catch(() => {
-			// Ignore pull errors
+			// Ignore pull errors when the repo has no upstream.
 		});
-
-		// Create new branch (or checkout if exists)
-		try {
-			await git.checkoutLocalBranch(branchName);
-		} catch {
-			await git.checkout(branchName);
+		await git.checkoutLocalBranch(branchName);
+	} catch (error) {
+		if (dirty) {
+			await git.checkout(baseBranch).catch(() => {});
+			await restoreAutostash(git).catch(() => {});
 		}
-	} finally {
-		// Pop stash if we stashed
-		if (stashed) {
-			await git.stash(["pop"]).catch(() => {
-				// Ignore stash pop errors
-			});
-		}
+		throw error;
 	}
 
 	return branchName;
 }
 
 /**
- * Return to the base branch
+ * Return to the base branch and restore work stashed for the task branch.
  */
 export async function returnToBaseBranch(
 	baseBranch: string,
 	workDir = process.cwd(),
 ): Promise<void> {
 	const git: SimpleGit = simpleGit(workDir);
-	await git.checkout(baseBranch).catch(() => {
-		// Ignore checkout errors
-	});
+	try {
+		await git.checkout(baseBranch);
+	} catch {
+		return;
+	}
+	await restoreAutostash(git).catch(() => {});
 }
 
 /**
