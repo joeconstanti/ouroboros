@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { ExperimentConfigSchema } from "../config/types.ts";
-import { metricImproved, parseEvalOutput } from "./evaluation.ts";
+import { metricImproved, parseEvalOutput, successfulEvaluation } from "./evaluation.ts";
 
 test("metrics reject missing, partial and nonfinite values", () => {
 	for (const value of ["", "NaN", "Infinity", "1ms", "1e999"]) {
@@ -27,4 +27,11 @@ test("configuration rejects empty evaluators and negative thresholds", () => {
 			primary_metric: { improvement_threshold: -1 },
 		}).success,
 	).toBe(false);
+});
+
+test("a winning metric cannot bypass process or quality failure", () => {
+	const output = "OUROBOROS_EVAL_STATUS=ok\nOUROBOROS_EVAL_PRIMARY=-100";
+	expect(successfulEvaluation(1, output)).toBeNull();
+	expect(successfulEvaluation(0, output.replace("=ok", "=fail"))).toBeNull();
+	expect(successfulEvaluation(0, output)?.primary).toBe("-100");
 });
