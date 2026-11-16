@@ -6,7 +6,6 @@ import { loadExperimentConfig } from "../config/experiment-loader.ts";
 import type { RuntimeOptions } from "../config/types.ts";
 import { createEngine, isEngineAvailable } from "../engines/index.ts";
 import type { AIEngineName, AIResult } from "../engines/types.ts";
-import { getDefaultBaseBranch } from "../git/branch.ts";
 import { logError, logInfo, logSuccess, logWarn, setVerbose } from "../ui/logger.ts";
 import { buildExperimentPrompt } from "./prompt.ts";
 import { isRetryableError, withRetry } from "./retry.ts";
@@ -77,23 +76,35 @@ export async function runExperimentLoop(options: RuntimeOptions): Promise<void> 
 		process.exit(1);
 	}
 
-	const engine = createEngine(options.aiEngine as AIEngineName);
-	const available = await isEngineAvailable(options.aiEngine as AIEngineName);
-	if (!available) {
-		logError(`${engine.name} CLI not found.`);
-		process.exit(1);
+	if (options.dryRun) {
+		console.log(
+			buildExperimentPrompt({
+				attempt: 1,
+				baselinePrimary: "(not evaluated)",
+				bestPrimary: "(not evaluated)",
+				programFile: exp.program_file,
+				allowedPaths: exp.allowed_paths,
+				forbiddenPaths: exp.forbidden_paths,
+				workDir,
+				autoCommit: options.autoCommit,
+			}),
+		);
+		return;
 	}
-
-	let baseBranch = options.baseBranch;
-	if (!baseBranch) {
-		baseBranch = exp.base_branch ?? (await getDefaultBaseBranch(workDir));
-	}
-
+	if (!options.autoCommit) throw new Error("Experiment mode requires commits; remove --no-commit.");
 	const git = simpleGit(workDir);
-	await git.checkout(baseBranch).catch(() => {
-		logError(`Cannot checkout ${baseBranch}`);
-		process.exit(1);
-	});
+	if (!(await git.status()).isClean()) {
+		throw new Error(
+			"Experiment mode requires a clean working tree. Commit or stash existing changes first.",
+		);
+	}
+	const engine = createEngine(options.aiEngine as AIEngineName);
+	if (!(await isEngineAvailable(options.aiEngine as AIEngineName))) {
+		throw new Error(`${engine.name} CLI not found.`);
+	}
+	const baseBranch = options.baseBranch || exp.base_branch || (await git.branch()).current;
+	if (!baseBranch) throw new Error("Detached HEAD: specify --base-branch.");
+	await git.checkout(baseBranch);
 
 	const expBranch = `ouroboros/experiment-${Date.now()}`;
 	await git.checkoutLocalBranch(expBranch).catch(async () => {
@@ -152,12 +163,6 @@ export async function runExperimentLoop(options: RuntimeOptions): Promise<void> 
 			workDir,
 			autoCommit: options.autoCommit,
 		});
-
-		if (options.dryRun) {
-			logInfo("(dry run) Prompt:");
-			console.log(prompt);
-			break;
-		}
 
 		let aiResult: AIResult | null = null;
 		try {
