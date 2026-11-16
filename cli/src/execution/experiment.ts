@@ -9,6 +9,7 @@ import { createEngine, isEngineAvailable } from "../engines/index.ts";
 import type { AIEngineName, AIResult } from "../engines/types.ts";
 import { logError, logInfo, logSuccess, logWarn, setVerbose } from "../ui/logger.ts";
 import { boundaryViolations } from "./boundaries.ts";
+import { isDirectCandidate, restoreAttempt } from "./experiment-git.ts";
 import { buildExperimentPrompt } from "./prompt.ts";
 import { isRetryableError, withRetry } from "./retry.ts";
 
@@ -95,6 +96,8 @@ export async function runExperimentLoop(options: RuntimeOptions): Promise<void> 
 	}
 	if (!options.autoCommit) throw new Error("Experiment mode requires commits; remove --no-commit.");
 	const git = simpleGit(workDir);
+	if ((await git.revparse("--show-toplevel")).trim() !== workDir)
+		throw new Error("Run experiments from the repository root.");
 	if (!(await git.status()).isClean()) {
 		throw new Error(
 			"Experiment mode requires a clean working tree. Commit or stash existing changes first.",
@@ -170,6 +173,7 @@ export async function runExperimentLoop(options: RuntimeOptions): Promise<void> 
 		try {
 			aiResult = await withRetry(
 				async () => {
+					await restoreAttempt(git, expBranch, bestCommit);
 					const res = await engine.execute(prompt, workDir);
 					if (!res.success && res.error && isRetryableError(res.error)) {
 						throw new Error(res.error);
@@ -179,6 +183,7 @@ export async function runExperimentLoop(options: RuntimeOptions): Promise<void> 
 				{ maxRetries: options.maxRetries, retryDelay: options.retryDelay },
 			);
 		} catch {
+			await restoreAttempt(git, expBranch, bestCommit);
 			appendTsv(
 				workDir,
 				resultsTsv,
@@ -188,6 +193,7 @@ export async function runExperimentLoop(options: RuntimeOptions): Promise<void> 
 		}
 
 		if (!aiResult?.success) {
+			await restoreAttempt(git, expBranch, bestCommit);
 			appendTsv(
 				workDir,
 				resultsTsv,
@@ -199,6 +205,7 @@ export async function runExperimentLoop(options: RuntimeOptions): Promise<void> 
 		const ncommits = (await git.raw(["rev-list", "--count", `${bestCommit}..HEAD`])).trim();
 		const nc = Number.parseInt(ncommits, 10) || 0;
 		if (nc === 0) {
+			await restoreAttempt(git, expBranch, bestCommit);
 			logWarn("No new commit; skipping.");
 			appendTsv(
 				workDir,
@@ -207,9 +214,9 @@ export async function runExperimentLoop(options: RuntimeOptions): Promise<void> 
 			);
 			continue;
 		}
-		if (nc > 1) {
+		if (nc > 1 || !(await isDirectCandidate(git, expBranch, bestCommit))) {
 			logWarn("Multiple commits; resetting to best.");
-			await git.raw(["reset", "--hard", bestCommit]);
+			await restoreAttempt(git, expBranch, bestCommit);
 			appendTsv(
 				workDir,
 				resultsTsv,
@@ -231,7 +238,7 @@ export async function runExperimentLoop(options: RuntimeOptions): Promise<void> 
 		]);
 		if (violations.length > 0 || !(await git.status()).isClean()) {
 			logWarn(`Candidate violates boundaries or has uncommitted changes: ${violations.join(", ")}`);
-			await git.raw(["reset", "--hard", bestCommit]);
+			await restoreAttempt(git, expBranch, bestCommit);
 			appendTsv(
 				workDir,
 				resultsTsv,
@@ -241,6 +248,7 @@ export async function runExperimentLoop(options: RuntimeOptions): Promise<void> 
 		}
 
 		const attemptLog = join(workDir, OUROBOROS_DIR, "experiments", "runs", `attempt-${att}.log`);
+		const candidateCommit = (await git.revparse("HEAD")).trim();
 		const { code: attemptCode, combined: attemptOut } = await runEvaluatorCommand(
 			evalCmd,
 			workDir,
@@ -248,9 +256,13 @@ export async function runExperimentLoop(options: RuntimeOptions): Promise<void> 
 		);
 		writeFileSync(attemptLog, attemptOut, "utf-8");
 		const parsed = successfulEvaluation(attemptCode, attemptOut);
-		if (!parsed) {
+		if (
+			!parsed ||
+			!(await git.status()).isClean() ||
+			(await git.revparse("HEAD")).trim() !== candidateCommit
+		) {
 			logWarn("Could not parse evaluator output; reverting.");
-			await git.raw(["reset", "--hard", bestCommit]);
+			await restoreAttempt(git, expBranch, bestCommit);
 			appendTsv(
 				workDir,
 				resultsTsv,
@@ -261,7 +273,7 @@ export async function runExperimentLoop(options: RuntimeOptions): Promise<void> 
 
 		const newNum = Number.parseFloat(parsed.primary);
 		if (Number.isNaN(newNum)) {
-			await git.raw(["reset", "--hard", bestCommit]);
+			await restoreAttempt(git, expBranch, bestCommit);
 			continue;
 		}
 
@@ -276,7 +288,7 @@ export async function runExperimentLoop(options: RuntimeOptions): Promise<void> 
 			);
 		} else {
 			logWarn(`DISCARD primary=${parsed.primary} (best=${bestScore})`);
-			await git.raw(["reset", "--hard", bestCommit]);
+			await restoreAttempt(git, expBranch, bestCommit);
 			appendTsv(
 				workDir,
 				resultsTsv,
