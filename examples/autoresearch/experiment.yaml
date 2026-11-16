@@ -18,7 +18,7 @@ eval_timeout_sec: 600
 # Branch to fork the experiment branch from (empty = current branch at start)
 base_branch: ""
 
-# Glob patterns (matched with bash [[ ]] against changed files is complex; enforced in prompt + reviewer)
+# Repo-relative globs; the TypeScript runner enforces these before evaluation.
 allowed_paths:
   - "**"
 
