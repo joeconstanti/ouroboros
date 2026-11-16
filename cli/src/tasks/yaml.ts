@@ -1,5 +1,6 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import YAML from "yaml";
+import { z } from "zod";
 import type { Task, TaskSource } from "./types.ts";
 
 interface YamlTask {
@@ -11,6 +12,43 @@ interface YamlTask {
 
 interface YamlTaskFile {
 	tasks: YamlTask[];
+}
+
+const yamlTaskSchema = z.object({
+	title: z.string().trim().min(1, "title is required"),
+	completed: z.boolean().optional(),
+	parallel_group: z.number().int().nonnegative().optional(),
+	description: z.string().optional(),
+});
+
+const yamlTaskFileSchema = z.object({
+	tasks: z.array(yamlTaskSchema),
+});
+
+/**
+ * Reject task files that would skip, merge or mis-group work.
+ * The original document is kept so completion can be written back.
+ */
+export function assertYamlTaskFile(data: unknown): asserts data is YamlTaskFile {
+	if (data === null || typeof data !== "object" || Array.isArray(data)) {
+		throw new Error("Task file must be a mapping with a tasks list");
+	}
+
+	const parsed = yamlTaskFileSchema.safeParse(data);
+	if (!parsed.success) {
+		const detail = parsed.error.issues
+			.map((issue) => `${issue.path.join(".") || "file"}: ${issue.message}`)
+			.join("; ");
+		throw new Error(`Invalid task file: ${detail}`);
+	}
+
+	const seen = new Set<string>();
+	for (const task of parsed.data.tasks) {
+		if (seen.has(task.title)) {
+			throw new Error(`Duplicate task title: ${task.title}`);
+		}
+		seen.add(task.title);
+	}
 }
 
 /**
@@ -31,7 +69,9 @@ export class YamlTaskSource implements TaskSource {
 
 	private readFile(): YamlTaskFile {
 		const content = readFileSync(this.filePath, "utf-8");
-		return YAML.parse(content) as YamlTaskFile;
+		const data = YAML.parse(content);
+		assertYamlTaskFile(data);
+		return data;
 	}
 
 	private writeFile(data: YamlTaskFile): void {
@@ -40,9 +80,9 @@ export class YamlTaskSource implements TaskSource {
 
 	async getAllTasks(): Promise<Task[]> {
 		const data = this.readFile();
-		return (data.tasks || [])
+		return data.tasks
 			.filter((t) => !t.completed)
-			.map((t, i) => ({
+			.map((t) => ({
 				id: t.title, // Use title as ID for YAML tasks
 				title: t.title,
 				body: t.description,
