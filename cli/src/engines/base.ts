@@ -2,19 +2,11 @@ import { spawn } from "node:child_process";
 import type { AIEngine, AIResult } from "./types.ts";
 
 /**
- * Check if a command is available in PATH
+ * Check if a command is available in PATH.
+ * Bun.which works on Windows, where `which` is not a command.
  */
 export async function commandExists(command: string): Promise<boolean> {
-	try {
-		const proc = Bun.spawn(["which", command], {
-			stdout: "pipe",
-			stderr: "pipe",
-		});
-		const exitCode = await proc.exited;
-		return exitCode === 0;
-	} catch {
-		return false;
-	}
+	return Bun.which(command) !== null;
 }
 
 /**
@@ -28,10 +20,13 @@ export async function execCommand(
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
 	const proc = Bun.spawn([command, ...args], {
 		cwd: workDir,
+		stdin: "pipe",
 		stdout: "pipe",
 		stderr: "pipe",
 		env: { ...process.env, ...env },
 	});
+	// Close stdin so a CLI cannot block waiting for interactive input.
+	proc.stdin.end();
 
 	const [stdout, stderr, exitCode] = await Promise.all([
 		new Response(proc.stdout).text(),
