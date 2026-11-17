@@ -4,7 +4,7 @@ import type { Task, TaskSource } from "./types.ts";
 const OPEN_TASK = /^\s*[-*+] \[ \] (.+)$/;
 const OPEN_MARK = /^(\s*[-*+] )\[ \] /;
 const COMPLETED_TASK = /^\s*[-*+] \[x\] /i;
-const FENCE = /^\s*(```|~~~)/;
+const FENCE = /^ {0,3}(`{3,}|~{3,})(.*)$/;
 
 export interface MarkdownTaskLine {
 	line: number;
@@ -19,17 +19,28 @@ export function scanMarkdownTasks(content: string): {
 	completed: number;
 } {
 	const lines = content.split("\n");
-	let fenced = false;
+	let fence: { marker: string; length: number } | null = null;
 	const open: MarkdownTaskLine[] = [];
 	let completed = 0;
 
 	for (let index = 0; index < lines.length; index++) {
-		const line = lines[index] ?? "";
-		if (FENCE.test(line)) {
-			fenced = !fenced;
+		const line = (lines[index] ?? "").replace(/\r$/, "");
+		const delimiter = line.match(FENCE);
+		if (fence) {
+			if (
+				delimiter &&
+				delimiter[1][0] === fence.marker &&
+				delimiter[1].length >= fence.length &&
+				!delimiter[2].trim()
+			) {
+				fence = null;
+			}
 			continue;
 		}
-		if (fenced) continue;
+		if (delimiter && (delimiter[1][0] === "~" || !delimiter[2].includes("`"))) {
+			fence = { marker: delimiter[1][0], length: delimiter[1].length };
+			continue;
+		}
 
 		const match = line.match(OPEN_TASK);
 		if (match?.[1]) {
