@@ -190,8 +190,36 @@ bash -n ouroboros.sh scripts/eval.sh scripts/eval-ouroboros.sh
 ```
 
 CI runs the regression suite, read-only lint, build, CLI help and shell syntax on
-macOS and Linux. Deterministic fake-agent tests verify orchestration; they do not
+Ubuntu. Deterministic fake-agent tests verify orchestration; they do not
 establish real-model quality gains or every agent's native discovery behavior.
+
+CI uses Bun 1.3.6 and `bun install --frozen-lockfile`. Pull requests validate
+proposed changes; pushes validate merged `main`. Feature-branch pushes do not
+create duplicate runs. A newer run cancels superseded runs for the same PR or
+ref, while unrelated PRs retain separate checks. Each validation stage is named
+so failures identify the command that needs attention.
+
+Git/process integration tests use Bun's five-second default test timeout. On a
+heavily loaded development host, run heavy verification one project at a time;
+start with a focused command such as `bun test src/execution/experiment-loop.test.ts`.
+If a timeout occurs, retain the failed output and compare unchanged default-branch
+behavior before attributing it to a change. Do not increase timeouts, drop
+assertions, or repeatedly rerun unchanged failures to obtain a green result.
+Generic PR validation requires the Ubuntu job; it does not require a hosted
+macOS runner. The POSIX process-group timeout tests run on Linux. When changing
+platform-sensitive process or launcher behavior, optionally run the same checks
+locally on macOS when capacity is available. CI builds one native Linux x64 binary with `bun run build:linux-x64` and runs
+`node bin.js --help` through the packaged launcher. The separate source-help
+check verifies the development entrypoint. `bun run build` retains its Darwin
+ARM64 target for local development; use the appropriate platform build script. Ubuntu CI does not prove macOS binary
+execution, notification delivery, or Windows process-tree termination. Verify
+relevant platform behavior separately before making platform-specific claims.
+
+The single Ubuntu job runs cheap shell syntax first, installs dependencies once,
+then checks formatting/lint, regression behavior and source CLI startup. The
+native build and launcher smoke test run last to verify binary packaging. The
+final Git diff check detects tracked-file mutations. Each gate checks a distinct
+contract; there is no release, deployment or all-platform packaging job in PR CI.
 
 ## Task Workflows
 
