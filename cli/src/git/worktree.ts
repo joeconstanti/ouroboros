@@ -1,5 +1,5 @@
-import { existsSync, mkdirSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, mkdtempSync, rmdirSync } from "node:fs";
+import { basename, join } from "node:path";
 import simpleGit, { type SimpleGit } from "simple-git";
 import { slugify } from "./branch.ts";
 
@@ -13,31 +13,24 @@ export async function createAgentWorktree(
 	worktreeBase: string,
 	originalDir: string,
 ): Promise<{ worktreeDir: string; branchName: string }> {
-	const branchName = `ouroboros/agent-${agentNum}-${slugify(taskName)}`;
-	const worktreeDir = join(worktreeBase, `agent-${agentNum}`);
-
+	// Reserve a fresh directory for every attempt, including repeated batches.
+	// Existing worktrees and branches may contain unfinished work.
+	mkdirSync(worktreeBase, { recursive: true });
+	const worktreeDir = mkdtempSync(join(worktreeBase, `agent-${agentNum}-`));
+	const branchName = `ouroboros/${basename(worktreeDir)}-${slugify(taskName)}`;
 	const git: SimpleGit = simpleGit(originalDir);
 
-	// Prune stale worktrees
-	await git.raw(["worktree", "prune"]);
-
-	// Delete branch if it exists
 	try {
-		await git.deleteLocalBranch(branchName, true);
-	} catch {
-		// Branch might not exist
+		await git.raw(["worktree", "add", "-b", branchName, worktreeDir, baseBranch]);
+	} catch (error) {
+		// Only remove our empty reservation. Never recursively remove user data.
+		try {
+			rmdirSync(worktreeDir);
+		} catch {
+			// Git may have populated it before failing; preserve it for inspection.
+		}
+		throw error;
 	}
-
-	// Create branch from base
-	await git.branch([branchName, baseBranch]);
-
-	// Remove existing worktree dir if any
-	if (existsSync(worktreeDir)) {
-		rmSync(worktreeDir, { recursive: true, force: true });
-	}
-
-	// Create worktree
-	await git.raw(["worktree", "add", worktreeDir, branchName]);
 
 	return { worktreeDir, branchName };
 }
