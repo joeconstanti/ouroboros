@@ -50,8 +50,8 @@ export function loadConfig(workDir = process.cwd()): OuroborosConfig | null {
 		const parsed = YAML.parse(content);
 		return OuroborosConfigSchema.parse(parsed);
 	} catch (error) {
-		// Return default config if parsing fails
-		return OuroborosConfigSchema.parse({});
+		const detail = error instanceof Error ? error.message : String(error);
+		throw new Error(`Invalid project config ${configPath}: ${detail}`);
 	}
 }
 
