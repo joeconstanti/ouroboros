@@ -1,7 +1,18 @@
-import { Command } from "commander";
-import type { RuntimeOptions } from "../config/types.ts";
+import { Command, InvalidArgumentError } from "commander";
+import { DEFAULT_OPTIONS, type RuntimeOptions } from "../config/types.ts";
 
 const VERSION = "4.0.0";
+
+/** Parse a whole, safe count before a malformed budget reaches execution. */
+function integerOption(minimum: number): (value: string) => number {
+	return (value) => {
+		const parsed = Number(value);
+		if (!/^\d+$/.test(value) || !Number.isSafeInteger(parsed) || parsed < minimum) {
+			throw new InvalidArgumentError(`Expected a safe integer >= ${minimum}.`);
+		}
+		return parsed;
+	};
+}
 
 /**
  * Create the CLI program with all options
@@ -29,11 +40,31 @@ export function createProgram(): Command {
 		.option("--qwen", "Use Qwen-Code")
 		.option("--droid", "Use Factory Droid")
 		.option("--dry-run", "Show what would be done without executing")
-		.option("--max-iterations <n>", "Maximum iterations (0 = unlimited)", "0")
-		.option("--max-retries <n>", "Maximum retries per task", "3")
-		.option("--retry-delay <n>", "Delay between retries in seconds", "5")
+		.option(
+			"--max-iterations <n>",
+			"Maximum iterations (0 = unlimited)",
+			integerOption(0),
+			DEFAULT_OPTIONS.maxIterations,
+		)
+		.option(
+			"--max-retries <n>",
+			"Maximum retries per task",
+			integerOption(0),
+			DEFAULT_OPTIONS.maxRetries,
+		)
+		.option(
+			"--retry-delay <n>",
+			"Delay between retries in seconds",
+			integerOption(0),
+			DEFAULT_OPTIONS.retryDelay,
+		)
 		.option("--parallel", "Run tasks in parallel using worktrees")
-		.option("--max-parallel <n>", "Maximum parallel agents", "3")
+		.option(
+			"--max-parallel <n>",
+			"Maximum parallel agents",
+			integerOption(1),
+			DEFAULT_OPTIONS.maxParallel,
+		)
 		.option("--branch-per-task", "Create a branch for each task")
 		.option("--base-branch <branch>", "Base branch for PRs")
 		.option("--create-pr", "Create pull request after each task")
@@ -98,16 +129,16 @@ export function parseArgs(args: string[]): {
 		skipLint,
 		aiEngine,
 		dryRun: opts.dryRun || false,
-		maxIterations: Number.parseInt(opts.maxIterations, 10) || 0,
-		maxRetries: Number.parseInt(opts.maxRetries, 10) || 3,
-		retryDelay: Number.parseInt(opts.retryDelay, 10) || 5,
+		maxIterations: opts.maxIterations,
+		maxRetries: opts.maxRetries,
+		retryDelay: opts.retryDelay,
 		verbose: opts.verbose || false,
 		branchPerTask: opts.branchPerTask || false,
 		baseBranch: opts.baseBranch || "",
 		createPr: opts.createPr || false,
 		draftPr: opts.draftPr || false,
 		parallel: opts.parallel || false,
-		maxParallel: Number.parseInt(opts.maxParallel, 10) || 3,
+		maxParallel: opts.maxParallel,
 		prdSource,
 		prdFile,
 		githubRepo: opts.github || "",
