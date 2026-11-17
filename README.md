@@ -190,8 +190,29 @@ bash -n ouroboros.sh scripts/eval.sh scripts/eval-ouroboros.sh
 ```
 
 CI runs the regression suite, read-only lint, build, CLI help and shell syntax on
-macOS and Linux. Deterministic fake-agent tests verify orchestration; they do not
+Ubuntu. Deterministic fake-agent tests verify orchestration; they do not
 establish real-model quality gains or every agent's native discovery behavior.
+
+CI uses Bun 1.3.6 and `bun install --frozen-lockfile`. Pull requests validate
+proposed changes; pushes validate merged `main`. Feature-branch pushes do not
+create duplicate runs. A newer run cancels superseded runs for the same PR or
+ref, while unrelated PRs retain separate checks. Each validation stage is named
+so failures identify the command that needs attention.
+
+Git/process integration tests use Bun's five-second default test timeout. On a
+heavily loaded development host, run heavy verification one project at a time;
+start with a focused command such as `bun test src/execution/experiment-loop.test.ts`.
+If a timeout occurs, retain the failed output and compare unchanged default-branch
+behavior before attributing it to a change. Do not increase timeouts, drop
+assertions, or repeatedly rerun unchanged failures to obtain a green result.
+Generic PR validation requires the Ubuntu job; it does not require a hosted
+macOS runner. The POSIX process-group timeout tests run on Linux. When changing
+platform-sensitive process or launcher behavior, optionally run the same checks
+locally on macOS when capacity is available. The current build command
+cross-compiles a Darwin ARM64 binary even on Ubuntu; CLI help checks the source
+entrypoint, not that compiled binary. Ubuntu CI does not prove macOS binary
+execution, notification delivery, or Windows process-tree termination. Verify
+relevant platform behavior separately before making platform-specific claims.
 
 ## Task Workflows
 
