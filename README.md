@@ -208,11 +208,18 @@ assertions, or repeatedly rerun unchanged failures to obtain a green result.
 Generic PR validation requires the Ubuntu job; it does not require a hosted
 macOS runner. The POSIX process-group timeout tests run on Linux. When changing
 platform-sensitive process or launcher behavior, optionally run the same checks
-locally on macOS when capacity is available. The current build command
-cross-compiles a Darwin ARM64 binary even on Ubuntu; CLI help checks the source
-entrypoint, not that compiled binary. Ubuntu CI does not prove macOS binary
+locally on macOS when capacity is available. CI builds one native Linux x64 binary with `bun run build:linux-x64` and runs
+`node bin.js --help` through the packaged launcher. The separate source-help
+check verifies the development entrypoint. `bun run build` retains its Darwin
+ARM64 target for local development; use the appropriate platform build script. Ubuntu CI does not prove macOS binary
 execution, notification delivery, or Windows process-tree termination. Verify
 relevant platform behavior separately before making platform-specific claims.
+
+The single Ubuntu job runs cheap shell syntax first, installs dependencies once,
+then checks formatting/lint, regression behavior and source CLI startup. The
+native build and launcher smoke test run last to verify binary packaging. The
+final Git diff check detects tracked-file mutations. Each gate checks a distinct
+contract; there is no release, deployment or all-platform packaging job in PR CI.
 
 ## Task Workflows
 
