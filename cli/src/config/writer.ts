@@ -54,7 +54,8 @@ boundaries:
  * Escape a value for safe YAML string
  */
 function escapeYaml(value: string): string {
-	return value.replace(/"/g, '\\"');
+	// JSON string escapes are valid inside YAML double-quoted scalars.
+	return JSON.stringify(value).slice(1, -1);
 }
 
 /**
