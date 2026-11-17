@@ -193,6 +193,21 @@ CI runs the regression suite, read-only lint, build, CLI help and shell syntax o
 macOS and Linux. Deterministic fake-agent tests verify orchestration; they do not
 establish real-model quality gains or every agent's native discovery behavior.
 
+CI uses Bun 1.3.6 and `bun install --frozen-lockfile`. Pull requests validate
+proposed changes; pushes validate merged `main`. Feature-branch pushes do not
+create duplicate runs. A newer run cancels superseded runs for the same PR or
+ref, while unrelated PRs retain separate checks. Both platform jobs finish even
+if one fails, preserving diagnostics.
+
+Git/process integration tests use Bun's five-second default test timeout. On a
+heavily loaded development host, run heavy verification one project at a time;
+start with a focused command such as `bun test src/execution/experiment-loop.test.ts`.
+If a timeout occurs, retain the failed output and compare unchanged default-branch
+behavior before attributing it to a change. Do not increase timeouts, drop
+assertions, or repeatedly rerun unchanged failures to obtain a green result.
+Queued hosted macOS jobs indicate runner availability, not a passing check;
+merges still require completed macOS and Linux validation.
+
 ## Task Workflows
 
 ### Task Sources
