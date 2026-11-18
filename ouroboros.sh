@@ -990,11 +990,9 @@ cleanup() {
     # Remove all worktrees we created
     for dir in "$WORKTREE_BASE"/agent-*; do
       if [[ -d "$dir" ]]; then
-        if git -C "$dir" status --porcelain 2>/dev/null | grep -q .; then
-          log_warn "Preserving dirty worktree: $dir"
-          continue
+        if ! remove_clean_worktree "$dir"; then
+          log_warn "Preserving worktree: $dir"
         fi
-        git worktree remove "$dir" 2>/dev/null || true
       fi
     done
     if ! find "$WORKTREE_BASE" -maxdepth 1 -type d -name 'agent-*' -print -quit 2>/dev/null | grep -q .; then
@@ -1938,32 +1936,24 @@ create_agent_worktree() {
   echo "$worktree_dir|$branch_name"
 }
 
+# Git's default worktree removal allows ignored files, so check them explicitly.
+remove_clean_worktree() {
+  local dir="$1"
+  local status
+  [[ -d "$dir" ]] || return 0
+  status=$(git -C "$dir" status --porcelain --untracked-files=all --ignored=matching) || return 1
+  [[ -z "$status" ]] || return 1
+  git -C "$ORIGINAL_DIR" worktree remove "$dir"
+}
+
 # Cleanup worktree after agent completes
 cleanup_agent_worktree() {
   local worktree_dir="$1"
-  local branch_name="$2"
   local log_file="${3:-}"
-  local dirty=false
 
-  if [[ -d "$worktree_dir" ]]; then
-    if git -C "$worktree_dir" status --porcelain 2>/dev/null | grep -q .; then
-      dirty=true
-    fi
+  if ! remove_clean_worktree "$worktree_dir" && [[ -n "$log_file" ]]; then
+    echo "Worktree left in place: $worktree_dir" >> "$log_file"
   fi
-
-  if [[ "$dirty" == true ]]; then
-    if [[ -n "$log_file" ]]; then
-      echo "Worktree left in place due to uncommitted changes: $worktree_dir" >> "$log_file"
-    fi
-    return 0
-  fi
-  
-  # Run from original directory
-  (
-    cd "$ORIGINAL_DIR" || exit 1
-    git worktree remove -f "$worktree_dir" 2>/dev/null || true
-  )
-  # Don't delete branch - it may have commits we want to keep/PR
 }
 
 # Run a single agent in its own isolated worktree

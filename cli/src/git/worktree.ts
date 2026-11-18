@@ -40,30 +40,32 @@ export async function createAgentWorktree(
  */
 export async function cleanupAgentWorktree(
 	worktreeDir: string,
-	branchName: string,
+	_branchName: string,
 	originalDir: string,
 ): Promise<{ leftInPlace: boolean }> {
-	// Check for uncommitted changes
-	if (existsSync(worktreeDir)) {
-		const worktreeGit = simpleGit(worktreeDir);
-		const status = await worktreeGit.status();
+	return removeCleanWorktree(worktreeDir, originalDir);
+}
 
-		if (status.files.length > 0) {
-			// Leave worktree in place due to uncommitted changes
-			return { leftInPlace: true };
-		}
-	}
+async function removeCleanWorktree(
+	worktreeDir: string,
+	originalDir: string,
+): Promise<{ leftInPlace: boolean }> {
+	if (!existsSync(worktreeDir)) return { leftInPlace: false };
 
-	// Remove the worktree
-	const git: SimpleGit = simpleGit(originalDir);
 	try {
-		await git.raw(["worktree", "remove", "-f", worktreeDir]);
+		const status = await simpleGit(worktreeDir).raw([
+			"status",
+			"--porcelain",
+			"--untracked-files=all",
+			"--ignored=matching",
+		]);
+		if (status.length > 0) return { leftInPlace: true };
+		await simpleGit(originalDir).raw(["worktree", "remove", worktreeDir]);
+		return { leftInPlace: false };
 	} catch {
-		// Ignore removal errors
+		// Preserve the directory when its status or removal cannot be confirmed.
+		return { leftInPlace: true };
 	}
-
-	// Don't delete branch - it may have commits we want to keep/PR
-	return { leftInPlace: false };
 }
 
 /**
@@ -104,11 +106,7 @@ export async function cleanupAllWorktrees(workDir: string): Promise<void> {
 	const worktrees = await listWorktrees(workDir);
 
 	for (const worktree of worktrees) {
-		try {
-			await git.raw(["worktree", "remove", "-f", worktree]);
-		} catch {
-			// Ignore errors
-		}
+		await removeCleanWorktree(worktree, workDir);
 	}
 
 	// Prune any stale worktrees
