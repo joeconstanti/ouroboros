@@ -3,7 +3,7 @@ import type { AIEngine, AIResult } from "../engines/types.ts";
 import { createTaskBranch, returnToBaseBranch } from "../git/branch.ts";
 import { createPullRequest } from "../git/pr.ts";
 import type { Task, TaskSource } from "../tasks/types.ts";
-import { logDebug, logError, logInfo, logSuccess } from "../ui/logger.ts";
+import { logDebug, logInfo, logSuccess } from "../ui/logger.ts";
 import { notifyTaskComplete, notifyTaskFailed } from "../ui/notify.ts";
 import { ProgressSpinner } from "../ui/spinner.ts";
 import { rejectBlankResult, tasksToRun } from "./pending.ts";
@@ -88,12 +88,14 @@ export async function runSequential(options: ExecutionOptions): Promise<Executio
 
 		// Create branch if needed
 		let branch: string | null = null;
-		if (branchPerTask && baseBranch) {
+		if (branchPerTask && !dryRun) {
+			if (!baseBranch) throw new Error("Task branch requires a base branch; use --base-branch.");
 			try {
 				branch = await createTaskBranch(task.title, baseBranch, workDir);
 				logDebug(`Created branch: ${branch}`);
 			} catch (error) {
-				logError(`Failed to create branch: ${error}`);
+				const detail = error instanceof Error ? error.message : String(error);
+				throw new Error(`Failed to create task branch for "${task.title}": ${detail}`);
 			}
 		}
 
@@ -180,7 +182,7 @@ export async function runSequential(options: ExecutionOptions): Promise<Executio
 		}
 
 		// Return to base branch if we created one
-		if (branchPerTask && baseBranch) {
+		if (branch) {
 			await returnToBaseBranch(baseBranch, workDir);
 		}
 	}
