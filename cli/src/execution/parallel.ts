@@ -214,7 +214,7 @@ export async function runParallel(
 			if (worktreeDir) {
 				const cleanup = await cleanupAgentWorktree(worktreeDir, branchName, workDir);
 				if (cleanup.leftInPlace) {
-					logInfo(`Worktree left in place (uncommitted changes): ${worktreeDir}`);
+					logInfo(`Worktree left in place: ${worktreeDir}`);
 				}
 			}
 		}

@@ -3,12 +3,12 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import simpleGit from "simple-git";
-import { cleanupAgentWorktree, createAgentWorktree } from "./worktree.ts";
+import { cleanupAgentWorktree, cleanupAllWorktrees, createAgentWorktree } from "./worktree.ts";
 
 test("repeated parallel attempts preserve existing worktrees, directories and branches", async () => {
 	const root = mkdtempSync(join(tmpdir(), "ouroboros-worktree-"));
 	const dir = join(root, "repo");
-	const base = join(root, "worktrees");
+	const base = join(root, ".ouroboros-worktrees");
 	mkdirSync(dir);
 	const git = simpleGit(dir);
 	try {
@@ -39,6 +39,40 @@ test("repeated parallel attempts preserve existing worktrees, directories and br
 		});
 		expect(existsSync(second.worktreeDir)).toBe(false);
 		expect((await git.branchLocal()).all).toContain(second.branchName);
+		expect((await git.status()).current).toBe("main");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("automatic cleanup preserves ignored and untracked files", async () => {
+	const root = mkdtempSync(join(tmpdir(), "ouroboros-cleanup-"));
+	const dir = join(root, "repo");
+	const base = join(root, ".ouroboros-worktrees");
+	mkdirSync(dir);
+	const git = simpleGit(dir);
+	try {
+		await git.raw(["init", "-b", "main"]);
+		await git.addConfig("user.name", "Test");
+		await git.addConfig("user.email", "test@example.com");
+		writeFileSync(join(dir, ".gitignore"), "*.log\n");
+		await git.add(".gitignore");
+		await git.commit("baseline");
+		const ignored = await createAgentWorktree("ignored", 2, "main", base, dir);
+		const log = join(ignored.worktreeDir, "attempt.log");
+		writeFileSync(log, "attempt evidence");
+		expect(await cleanupAgentWorktree(ignored.worktreeDir, ignored.branchName, dir)).toEqual({
+			leftInPlace: true,
+		});
+		const untracked = await createAgentWorktree("untracked", 3, "main", base, dir);
+		const notes = join(untracked.worktreeDir, "notes");
+		writeFileSync(notes, "unfinished notes");
+		const clean = await createAgentWorktree("clean", 4, "main", base, dir);
+		await cleanupAllWorktrees(dir);
+		expect(readFileSync(log, "utf-8")).toBe("attempt evidence");
+		expect(readFileSync(notes, "utf-8")).toBe("unfinished notes");
+		expect(existsSync(clean.worktreeDir)).toBe(false);
+		expect((await git.branchLocal()).all).toContain(clean.branchName);
 		expect((await git.status()).current).toBe("main");
 	} finally {
 		rmSync(root, { recursive: true, force: true });
