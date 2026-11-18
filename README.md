@@ -104,7 +104,7 @@ ouroboros/
 ├── .opencode/skills          # Link to shared skills
 ├── examples/autoresearch/    # Experiment configuration and protocol
 ├── scripts/                 # Generic and self-host evaluators
-└── .github/workflows/        # macOS and Linux quality checks
+└── .github/workflows/        # Ubuntu quality checks
 ```
 
 Runtime configuration and progress live in `.ouroboros/` inside the target
@@ -186,7 +186,11 @@ Use `bun run build:all` to compile all configured platform binaries. From the
 repository root, check shell syntax with:
 
 ```sh
-bash -n ouroboros.sh scripts/eval.sh scripts/eval-ouroboros.sh
+(
+  for script in ouroboros.sh scripts/eval.sh scripts/eval-ouroboros.sh; do
+    bash -n "$script" || exit 1
+  done
+)
 ```
 
 CI runs the regression suite, read-only lint, build, CLI help and shell syntax on
